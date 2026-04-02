@@ -1,0 +1,7 @@
+\beamer@sectionintoc {1}{Hamiltonian}{2}{0}{1}
+\beamer@sectionintoc {2}{Laplacian and derivatives}{4}{0}{2}
+\beamer@sectionintoc {3}{Tridiagonal solve and IMEX}{6}{0}{3}
+\beamer@sectionintoc {4}{Boundary conditions and mass}{8}{0}{4}
+\beamer@sectionintoc {5}{Other differences}{10}{0}{5}
+\beamer@sectionintoc {6}{Example}{11}{0}{6}
+\beamer@sectionintoc {7}{Summary}{12}{0}{7}

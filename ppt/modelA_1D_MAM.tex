@@ -1,0 +1,343 @@
+\documentclass{beamer}
+
+\usetheme{Madrid}
+
+\title{Modified Ginzburg--Landau Model with MAM}
+\subtitle{\texttt{modified\_Ginzburg\_Landau\_MAM.py} from Zakine 2023 PRX}
+\author{Shih-Huan Huang}
+\date{\today}
+
+\begin{document}
+
+%------------------------------------------------------------------------------
+\begin{frame}
+    \titlepage
+\end{frame}
+
+%------------------------------------------------------------------------------
+\section{Problem}
+\begin{frame}{Problem}
+    \begin{itemize}
+        \item Consider the following stochastic differential equation (SDE):
+        \begin{equation}
+            \frac{\partial \rho}{\partial t} = D\,\nabla^2\rho + \rho - \rho^3 + \kappa\,\langle \rho^2 \rangle + \sqrt{\epsilon}\,\eta(t),
+        \end{equation}
+        \item The noise term $\eta(t)$ is a Gaussian white noise with $\langle \eta(t) \rangle = 0$ and $\langle \eta(t) \eta(t') \rangle = \delta(t - t')$.
+    \end{itemize}
+\end{frame}
+
+%------------------------------------------------------------------------------
+\section{From SDE to Freidlin-Wentzell action}
+\begin{frame}{From SDE to Freidlin-Wentzell action}
+    \begin{itemize}
+        \item Given a SDE 
+        \begin{equation}
+            \dot{\rho} = b(\rho) + \sqrt{\epsilon}\sigma(\rho)\eta(t)
+        \end{equation}
+        \item The probability of the system to go along a certain path $\rho(x,t)$ is given by 
+        \begin{equation}
+            P \propto \exp\left( -\frac{1}{\epsilon} S[\rho(x,t)] \right)
+        \end{equation}
+        \item The Freidlin-Wentzell action $S[\rho(x,t)]$ is defined as
+        \begin{equation}
+            S[\rho(x,t)] = \int_0^{T_{\max}} L(\rho, \dot{\rho}) dt,
+        \end{equation}
+        \item The Lagrangian $L(\rho, \dot{\rho})$ is given by
+        \begin{equation}
+            L(\rho, \dot{\rho}) = \frac{1}{2} \left| \sigma(\rho)^{-1} (\dot{\rho} - b(\rho)) \right|^2 = \frac{1}{2} \langle \dot{\rho} - b(\rho), a(\rho)^{-1} (\dot{\rho} - b(\rho)) \rangle
+        \end{equation}, where $a(\rho) = \sigma(\rho)\sigma(\rho)^T$.
+    \end{itemize}
+\end{frame}
+
+%------------------------------------------------------------------------------
+\section{From Lagrangian to Hamiltonian}
+\begin{frame}{From Lagrangian to Hamiltonian}
+    \begin{itemize}
+        \item The Hamiltonian $H(\rho, \theta)$ is given by Legendre transformation:
+        \begin{equation}
+            H(\rho, \theta) = \sup_{\dot{\rho}} \left[ \langle \theta, \dot{\rho} \rangle - L(\rho, \dot{\rho}) \right]
+        \end{equation}
+        $\langle \theta, \dot{\rho} \rangle$ is the inner product over the space of $x$.
+        \item To find the optimal $\dot{\rho}$, we take the derivative of $H(\rho, \theta)$ with respect to $\dot{\rho}$ and set it to zero:
+        \begin{equation}
+            \frac{\partial}{\partial \dot{\rho}} \left[ \langle \dot{\rho}, \theta \rangle - \frac{1}{2} \langle \dot{\rho} - b(\rho), a(\rho)^{-1} (\dot{\rho} - b(\rho)) \rangle \right] = 0
+        \end{equation}
+        \item Solving for $\dot{\rho}$, we get
+        \begin{equation}
+            \dot{\rho}^* = b(\rho) + a(\rho)\theta
+        \end{equation}
+        \item Substituting $\dot{\rho}^*$ into $H(\rho, \theta)$, we get
+        \begin{equation}
+            H(\rho, \theta) = \langle b(\rho), \theta \rangle + \frac{1}{2} |\sigma(\rho)\theta|^2
+        \end{equation}
+    \end{itemize}
+\end{frame}
+
+\section{Modified Ginzburg-Landau Model}
+\begin{frame}{Modified Ginzburg-Landau Model}
+    \begin{itemize}
+        \item Let $b(\rho)=D\,\nabla^2\rho + \rho - \rho^3 + \kappa\,\langle \rho^2 \rangle$ and $\sigma(\rho)=1$.
+        \item The Hamiltonian $H(\rho, \theta)$ is given by
+        \begin{equation}
+            H(\rho, \theta) = \langle D\,\nabla^2\rho + \rho - \rho^3 + \kappa\,\langle \rho^2 \rangle, \theta \rangle + \frac{1}{2} \|\theta\|^2
+        \end{equation}
+        \item Then the Lagrangian $L(\rho, \dot{\rho})$ is defined as purely deterministic cost:
+        \begin{equation}
+            L(\rho, \dot{\rho}) = \frac{1}{2} \| \dot{\rho} - b(\rho) \|^2 = \frac{1}{2} \langle \dot{\rho} - b(\rho), \dot{\rho} - b(\rho) \rangle
+        \end{equation}
+        \item \textit{Physical meaning:} This Lagrangian directly corresponds to the required noise energy $\frac{1}{2} \epsilon \|\eta(t)\|^2$ to drive the trajectory.
+    \end{itemize}
+\end{frame}
+
+%------------------------------------------------------------------------------
+\section{Algorithm}
+\begin{frame}{Minimum Action Method (MAM)}
+    \begin{itemize}
+        \item Solves the \textbf{minimum action} (instanton) path for a modified Ginzburg--Landau model in a spatially discrete setting.
+        \item Uses a \textbf{Hamiltonian formulation} with state $\rho$ (density/order parameter) and conjugate momentum $\theta$ (noise force).
+        \item Time evolution is in \textbf{minimization time} $\tau$; the path in ``time'' $t \in [0, T_{\max}]$ is discretized with $N_t$ points.
+    \end{itemize}
+\end{frame}
+
+%------------------------------------------------------------------------------
+\section{Model}
+\begin{frame}{Discretize Hamiltonian and Lagrangian}
+    For spacing $h$, the Hamiltonian (sum over boxes with total length $L_x=N_x\times h$) is
+    \begin{equation}
+        H(t;\rho,\theta) = h\sum_{i=1}^{N_x} \left[ (D\,\nabla^2\rho_i + \rho_i - \rho_i^3 + \kappa\,\langle \rho^2 \rangle)  \theta_i + \frac{1}{2}\,\theta_i^2\right].
+    \end{equation}
+    where $\rho_i, \theta_i$ are the density and noise force at the $i$-th box, $\nabla^2\rho_i = \frac{\rho_{i+1} + \rho_{i-1} - 2\rho_i}{h^2}$ is the discrete Laplacian, $\langle \rho^2 \rangle = \frac{1}{N_x} \sum_{i=1}^{N_x} \rho_i^2$ is the spatial average of the square of the density.
+
+    Lagrangian (along the path in $t$):
+    \begin{equation}
+        L(t;\rho,\dot{\rho}) = h\sum_{i=1}^{N_x} \left[ \dot{\rho}_i \cdot \theta_i \right]- H(\rho,\theta).
+    \end{equation}
+\end{frame}
+
+
+%------------------------------------------------------------------------------
+\section{Initial \& output}
+\begin{frame}{Boundary conditions and initial path}
+    \begin{itemize}
+        \item We use the method of Zakine and vanden Eijnden to obtain solutions to Hamilton's equations with boundary conditions given by the endpoints $\rho_1$, $\rho_2$.
+    
+        \item $\rho_1$, $\rho_2$ are homogeneous (all boxes equal) from the roots of the cubic equation: $-x^3 + \kappa x^2 + x = 0$; for \texttt{upward=True}, path goes from smallest to largest root.
+        \item Initial path: For $0 \le j \le N_x-1$ and $1 \le k \le N_t-2$,
+        \begin{equation}
+            \rho^k_j = (1-k/N_t)\,\rho_1 + k/N_t\,\rho_2 %+ \mathrm{bump}(j,k).
+        \end{equation}
+        %$\mathrm{bump}= \mathrm{bump\_amplitude} \times \sin^2(\pi\,j/N_x)\,\sin^2(\pi k/N_t)$.
+    \end{itemize}
+\end{frame}
+
+%------------------------------------------------------------------------------
+\begin{frame}{Visualization}
+    \begin{itemize}
+        \item \textbf{Heatmaps:} $\rho$ and $\theta$ as functions of (time along path, space index).
+        \item \textbf{Symmetry-breaking projection:} Scatter of mean density $\bar{\rho}$ vs.\ standard deviation $\sigma_\rho$ along the path (homogeneous vs.\ symmetry-broken).
+        \item \textbf{L \& H:} Lagrangian $L$ and Hamiltonian $H$ vs.\ $t/T_{\max}$.
+    \end{itemize}
+\end{frame}
+
+
+%------------------------------------------------------------------------------
+\begin{frame}{Example run: when $\kappa=0$}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{ppt/figures/figure3.png}
+            \medskip
+            \textbf{Forward}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{ppt/figures/figure4.png}
+            \medskip
+            \textbf{Backward}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+%------------------------------------------------------------------------------
+\begin{frame}{Example run: when $\kappa \neq 0$}
+    \begin{columns}[T]
+        \begin{column}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{ppt/figures/figure1.png}
+            \medskip
+            \textbf{Forward}
+        \end{column}
+        \begin{column}{0.48\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{ppt/figures/figure5.png}
+            \medskip
+            \textbf{Backward}
+        \end{column}
+    \end{columns}
+\end{frame}
+
+%------------------------------------------------------------------------------
+\begin{frame}{Varying $T_{max}$ (forward path)}
+    \begin{columns}[T]
+        \begin{column}{0.15\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{ppt/figures/T_max20.png}
+        \end{column}
+        \begin{column}{0.15\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{ppt/figures/T_max30.png}
+        \end{column}
+        \begin{column}{0.15\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{ppt/figures/T_max50.png}
+        \end{column}
+        \begin{column}{0.15\textwidth}
+            \centering
+            \includegraphics[width=\textwidth]{ppt/figures/T_max80.png}
+        \end{column}
+    \end{columns}
+    \begin{center}
+        \includegraphics[width=0.65\linewidth]{ppt/figures/figure2.png}
+    \end{center}
+\end{frame}
+
+%------------------------------------------------------------------------------
+\begin{frame}{Instanton of different $\kappa$}
+    
+\end{frame}
+
+
+
+%------------------------------------------------------------------------------
+\begin{frame}{Results are independent of spatial resolution}
+    \begin{center}
+        \includegraphics[width=0.95\linewidth]{ppt/figures/figure7.png}
+    \end{center}
+\end{frame}
+
+%------------------------------------------------------------------------------
+\begin{frame}{Results are independent of temporal resolution}
+    % \begin{center}
+    %     \includegraphics[width=0.95\linewidth]{ppt/figures/figure7.png}
+    % \end{center}
+\end{frame}
+
+
+%------------------------------------------------------------------------------
+\section{Summary}
+\begin{frame}{Summary}
+    \begin{itemize}
+        \item \texttt{modified\_Ginzburg\_Landau\_MAM.py} implements a \textbf{minimum-action path} for a modified Ginzburg--Landau model on $L$ spatial boxes.
+        \item Uses $(\rho,\theta)$ and $(U,V)$ formulations, FFT in the path direction, and semi-implicit tridiagonal solves per Fourier mode.
+        \item Output: action $S$, heatmaps of $\rho$/$\theta$, and a symmetry-breaking plot.
+    \end{itemize}
+\end{frame}
+
+% Appendix
+%------------------------------------------------------------------------------
+\section{Discretization \& time stepping}
+\begin{frame}{Discretization: $U$ and $V$ variables}
+    The code uses the change of variables
+    \begin{equation}
+        U = \rho + \theta, \qquad V = \rho - \theta
+        \quad\Rightarrow\quad
+        \rho = \frac{U+V}{2},\quad \theta = \frac{U-V}{2}.
+    \end{equation}
+    \begin{equation}
+        \partial_\tau U = \partial_t U + f(U,V)
+        \quad\Rightarrow\quad
+        \partial_\tau V = -\partial_t V + g(U,V)
+    \end{equation}
+    \begin{itemize}
+        \item Characteristic lines for $U$ and $V$ are $d\tau = -dt$, $d\tau = dt$ respectively. 
+        \item In other words, we update $U$ backward in $t$ and $V$ forward in $t$ when iterating $\tau$.
+    \end{itemize}
+    This yields a semi-implicit scheme that is solved in Fourier space (over the $N_{\mathrm{copy}}$ index) using prebuilt tridiagonal matrices \texttt{A\_solve\_upper\_adapted}, \texttt{B\_solve\_lower\_adapted} per Fourier mode.
+\end{frame}
+
+%------------------------------------------------------------------------------
+\begin{frame}{Implicit upwind scheme: why ``upwind''?}
+    \textbf{Challenge:} How do we discretize the grid so we capture both waves without numerical explosion?
+    \vspace{0.4em}
+    \textbf{Central difference} uses both neighbors $\Rightarrow$ wrong direction for a wave $\Rightarrow$ checkerboard / instability.
+    \vspace{0.4em}
+    \textbf{Upwind:} ``Where the wind comes from, take the difference from there.''
+    \begin{itemize}
+        \item \textbf{$V$ (forward in $t$):} information arrives from the \emph{past} ($j-1$). Use \textbf{backward difference} for $\partial_t V$: $(V_j^{k+1} - V_{j-1}^{k+1})/\Delta t$.
+        \item \textbf{$U$ (backward in $t$):} information arrives from the \emph{future} ($j+1$). Use \textbf{forward difference} for $\partial_t U$: $(U_{j+1}^{k+1} - U_j^{k+1})/\Delta t$.
+    \end{itemize}
+    So the stencil respects the direction of each characteristic.
+\end{frame}
+
+%------------------------------------------------------------------------------
+\begin{frame}{Why ``implicit''? Unconditional stability}
+    Upwind alone can still blow up when $\Delta\tau$ is large. \textbf{Implicit} trick: evaluate the convective derivative at the \emph{future} time $k+1$ (unknowns on the left). Then the scheme is \textbf{unconditionally stable}.
+    \vspace{0.4em}
+    Let $r = \Delta\tau/\Delta t$ (path step $\Delta t$).
+    \vspace{0.3em}
+    \textbf{Wave $V$} ($\partial_\tau V = -\partial_t V + g$): backward difference in $t$ at $k+1$:
+    \[
+    \frac{V_j^{k+1} - V_j^k}{\Delta\tau} = -\frac{V_j^{k+1} - V_{j-1}^{k+1}}{\Delta t} + g_j^k
+    \;\Rightarrow\;
+    V_j^{k+1}(1+r) - V_{j-1}^{k+1}\,r = V_j^k + \Delta\tau\,g_j^k.
+    \]
+    \textbf{Wave $U$} ($\partial_\tau U = \partial_t U + f$): forward difference in $t$ at $k+1$:
+    \[
+    \frac{U_j^{k+1} - U_j^k}{\Delta\tau} = \frac{U_{j+1}^{k+1} - U_j^{k+1}}{\Delta t} + f_j^k
+    \;\Rightarrow\;
+    U_j^{k+1}(1+r) - U_{j+1}^{k+1}\,r = U_j^k + \Delta\tau\,f_j^k.
+    \]
+    These yield a \textbf{lower} triangular system for $V$ and an \textbf{upper} triangular system for $U$.
+\end{frame}
+
+%------------------------------------------------------------------------------
+\begin{frame}{Why lower triangular? Macro view of the $V$-update}
+    At one grid point: $v_j^{k+1}(1+r) - v_{j-1}^{k+1} r = \mathrm{RHS}_j$. To see the matrix shape, write \textbf{all} equations $j=1,\ldots,N$ as $A\mathbf{v} = \mathbf{b}$.
+    \vspace{0.4em}
+    \textbf{Unknown:} $\mathbf{v}^{k+1} = (v_1^{k+1},\ldots,v_N^{k+1})^\top$; RHS$_j = v_j^k + \Delta\tau\,g_j^k$ (known). Boundary $v_0^{k+1}$ is given $\Rightarrow$ move to RHS.
+    \vspace{0.4em}
+    Row $j=1$: $(1+r)v_1^{k+1} = \mathrm{RHS}_1 + r v_0^{k+1}$. Row $j\ge 2$: $-r v_{j-1}^{k+1} + (1+r)v_j^{k+1} = \mathrm{RHS}_j$.
+    \vspace{0.2em}
+    \[
+    \begin{bmatrix} 1+r & 0 & 0 & \cdots \\ -r & 1+r & 0 & \cdots \\ 0 & -r & 1+r & \cdots \\ \vdots & \vdots & \ddots & \ddots \end{bmatrix}
+    \begin{bmatrix} v_1^{k+1} \\ v_2^{k+1} \\ \vdots \\ v_N^{k+1} \end{bmatrix}
+    =
+    \begin{bmatrix} \mathrm{RHS}_1 + r v_0^{k+1} \\ \mathrm{RHS}_2 \\ \vdots \\ \mathrm{RHS}_N \end{bmatrix}
+    \]
+    \vspace{0.2em}
+    So the coefficient matrix is \textbf{lower triangular} (diagonal $(1+r)$, subdiagonal $-r$, above diagonal 0). Hence \textbf{forward substitution}: solve $v_1$, then $v_2$, \ldots, $v_N$---physically, $V$ propagates \emph{forward} in $t$.
+    \vspace{0.3em}
+    \textbf{$U$-update:} $u_j^{k+1}(1+r) - u_{j+1}^{k+1} r = \mathrm{RHS}_j$ depends on $j$ and $j+1$ $\Rightarrow$ \textbf{upper triangular} matrix $\Rightarrow$ \textbf{backward substitution} from $j=N$ down to $1$ (backward in $t$). In the code, \texttt{B\_solve\_lower\_adapted} implements the lower-triangular solve for $V$.
+\end{frame}
+
+%------------------------------------------------------------------------------
+\begin{frame}{Time stepping}
+    \textbf{Concept (each $\Delta\tau$):}
+    \begin{enumerate}
+        \item \textbf{Downstream:} Solve $V$ (lower triangular, forward substitution) from $t=0$ to $T_{\max}$ with boundary $V_0^{k+1}$.
+        \item \textbf{Upstream:} Solve $U$ (upper triangular, backward substitution) from $t=T_{\max}$ back to $0$ with boundary at last copy.
+        \item \textbf{Update:} $\rho = \frac{U+V}{2}$, $\theta = \frac{U-V}{2}$. Code: \texttt{A\_solve\_upper\_adapted} $\Rightarrow$ $U$; \texttt{B\_solve\_lower\_adapted} $\Rightarrow$ $V$.
+    \end{enumerate}
+    \vspace{0.4em}
+    \textbf{Implementation:} (1) Compute $\partial H/\partial\rho$, $\partial H/\partial\theta$; form \texttt{reaction\_U} ($f(u,v)$), \texttt{reaction\_V}($g(u,v)$); FFT in copy direction. (2) \texttt{solve\_triangular(A\_..., ...)} for $U$ (BC at last copy $\rho=\rho_2$); \texttt{solve\_triangular(B\_..., ..., lower=True)} for $V$ (BC at first copy $\rho=\rho_1$). (3) FFT$^{-1}$, update $\rho,\theta$, re-set $U,V$. Boundaries keep $\rho(0)=\rho_1$, $\rho(N_{\mathrm{copy}}-1)=\rho_2$.
+\end{frame}
+
+%------------------------------------------------------------------------------
+\begin{frame}{Connecting boundary conditions of U and V}
+    We know \emph{both} endpoints of $\rho$: $\rho(0) = \rho_1$ and $\rho(T_{\max}) = \rho_2$.
+    \vspace{0.8em}
+    From $U = \rho + \theta$ and $V = \rho - \theta$ we have $U + V = 2\rho$. At the end of the path:
+    \begin{equation}
+        U(T_{\max}) = 2\rho_2 - V(T_{\max}).
+    \end{equation}
+    We use the \emph{old} $V$ from the previous iteration and the fixed $\rho_2$ to get $U$ at the endpoint; then we propagate $U$ \emph{backward} in $t$ down to $t=0$.
+    \vspace{0.8em}
+    At the start of the path:
+    \begin{equation}
+        V(0) = 2\rho_1 - U(0).
+    \end{equation}
+    $U$ has just finished its ``time travel'' and we have the updated $U(0)$. We use it with the fixed $\rho_1$ to get $V$ at the start; then we propagate $V$ \emph{forward} in $t$ up to $T_{\max}$.
+\end{frame}
+
+
+\end{document}
