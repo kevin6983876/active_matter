@@ -1,0 +1,10 @@
+# 忽略整個 checkpoints 資料夾
+checkpoints/
+
+# 忽略所有 npz 數據檔
+*.npz
+
+# 忽略所有 GIF 檔案
+*.gif
+
+*.png
