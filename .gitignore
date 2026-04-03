@@ -14,3 +14,15 @@ checkpoints/
 *.tex
 
 *.ipynb
+
+*.aux
+
+*.log
+
+*.out
+
+*.snm
+
+*.toc
+
+*.nav
