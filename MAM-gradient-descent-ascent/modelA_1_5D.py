@@ -1,53 +1,17 @@
-from numpy import loadtxt
-from matplotlib import cm
 import math
-import cmath
 import time
 import os
-
 import numpy as np
-
-import matplotlib.pyplot as plt
-from matplotlib import rc
-
-from itertools import count
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from scipy import sparse
 from scipy.sparse.linalg import factorized
-from scipy.linalg import solve_triangular, solve_banded
-from scipy.interpolate import interp1d
-#rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
-## for Palatino and other serif fonts use:
-#rc('font',**{'family':'serif','serif':['Palatino']})
-#rc('text', usetex=True)
-
-
-
-import time
+from scipy.linalg import solve_banded
 start_time = time.time()
-
 PI = math.pi
-
-def normL2(h, array): #norm L2, spacing h for integration
-	norm = math.sqrt( h * np.sum( np.square( array.real ) ) )
-	return norm
-
-def normL2Big(h, array): #norm L2, spacing h for integration
-	norm = np.sqrt( h * np.sum( np.square( array.real ), axis=1 ) )
-	return norm
-
-
-
-
 ##############################
 """ DEFINE FUNCTIONS """
 ###############################
-
-from scipy.linalg import solve_triangular
-#x = solve_triangular(a, b, lower=True)
-
-
 def Hamiltonian(h, rho, theta): #return an array of size Ncopy, axis=1 sums the colums
 	L_spatial = rho.shape[1]
 	H = np.sum( (D*(np.roll(rho,-1, axis=1) +  np.roll(rho,1, axis=1) -2* rho)/h**2 + rho -rho**3 + kappa*np.outer(np.mean(rho**2,axis=1), np.ones(L_spatial)))*theta + 0.5*aa*theta**2     ,  axis=1)
@@ -146,10 +110,6 @@ def animate_any_boxes(rho, theta, filename="boxes_evolution.mp4", dnu=None, skip
         anim.save(filename, writer="pillow", fps=fps, dpi=100)
     plt.close(fig)
     print(f"Saved animation for L={L}: {filename}")
-
-
-
-
 
 
 ################################
@@ -352,18 +312,6 @@ if previous_data == True:
 		# shift rho and theta by Ly//2
 		# rho_old = np.roll(rho_old, Ly//2, axis=1)
 		# theta_old = np.roll(theta_old, Ly//2, axis=1)
-		# # 2. 建立新、舊路徑的真實物理參數網格
-		# s_old = np.linspace(0, T_old, Ncopy_old)
-		# s_new = np.linspace(0, Tmax, Ncopy) # Tmax 是你現在設定的 30.0
-		# s_map = s_new * (T_old / Tmax)
-		# f_rho = interp1d(s_old, rho_old, axis=0, kind='linear')
-		# f_theta = interp1d(s_old, theta_old, axis=0, kind='linear')
-
-		# # 5. 一行指令，直接把整條 3D 陣列插值出來！(取代了你原本的 for j in range 迴圈)
-		# rho = f_rho(s_map)
-		# theta = f_theta(s_map)
-
-
 		import scipy.ndimage as ndimage
 		zoom_factors = (Ncopy / Ncopy_old, Ly / Ly_old, Lx / Lx_old)
 		rho = ndimage.zoom(rho_old.real, zoom_factors, order=1).astype(complex)
@@ -496,11 +444,6 @@ for i in range(start_iter, iterations+1):
 	# 4. 對每個空間 mode 解 A @ U_new = RHS (path-time)
 	N_space = Ly * Lx
 	RHS_flat = RHS_U_Fourier.reshape(Ncopy, -1)
-	# U_new_flat = np.zeros_like(RHS_flat)
-	# for col in range(N_space):
-	# 	U_new_flat[:, col] = solve_triangular(A_solve_upper_adapted, RHS_flat[:, col])
-	# U2_Fourier[:] = U_new_flat.reshape(Ncopy, Ly, Lx)
-
 	U_Fourier_flat = U_Fourier.reshape(Ncopy, -1)
 	U_new_flat = np.zeros_like(RHS_flat)
 	for col in range(N_space):
@@ -534,11 +477,6 @@ for i in range(start_iter, iterations+1):
 	RHS_V_Fourier = V_Fourier + dtau * reaction_V_Fourier
 	RHS_V_Fourier[0, :, :] = -U_Fourier[0, :, :] + 2.0 * rho1k
 
-	# RHS_V_flat = RHS_V_Fourier.reshape(Ncopy, -1)
-	# V_new_flat = np.zeros_like(RHS_V_flat)
-	# for col in range(N_space):
-	# 	V_new_flat[:, col] = solve_triangular(B_solve_lower_adapted, RHS_V_flat[:, col], lower=True)
-	# V2_Fourier[:] = V_new_flat.reshape(Ncopy, Ly, Lx)
 	RHS_V_flat = RHS_V_Fourier.reshape(Ncopy, -1)
 	V_Fourier_flat = V_Fourier.reshape(Ncopy, -1)
 	V_new_flat = np.zeros_like(RHS_V_flat)
@@ -605,24 +543,6 @@ for i in range(start_iter, iterations+1):
 		actionS = dnu* np.sum(Lag)*h*aa
 		
 		fig.suptitle(r'$N_t=$'+str(int(Ncopy))+r', $L=$'+str(Ly)+r', $\Delta \tau=$'+str("%.1e"%dtau)+r', $D=$'+str("%.1e"%D) +r', $T_\mathrm{max}=$'+str("%.1f"%Tmax)+"\n"+"$\kappa =$"+str(kappa)+", $S=$"+str("%.6f"%(actionS))+', Time '+ str(i*dtau), fontsize=20)
-		
-		### VECTOR FIELD
-		# Saction = dnu* np.sum(Lagrangian(h, dnu, rho, theta).real)
-		# ax0.scatter(rho[:,0].real, rho[:,1].real, color='darkblue', s=2.2, zorder=15)
-		# x = np.arange(solRho[0], solRho[2], 0.02)
-		# y = np.arange(solRho[0], solRho[2], 0.02)
-
-		# X, Y = np.meshgrid(x, y)
-		# u = D*(2*Y-2*X)/h**2  + (X - X*X*X) + kappa*(X*X+Y*Y)/2.
-		# v = D*(2*X-2*Y)/h**2  + (Y - Y*Y*Y) + kappa*(X*X+Y*Y)/2.
-
-		# ax0.streamplot(x, y, u, v, density=1, color='grey')
-		# ax0.set_xlabel(r'$\rho_1$', fontsize=20)
-		# ax0.set_ylabel(r'$\rho_2$', fontsize=20)
-		# ax0.set_xlim(solRho[0],solRho[2])
-		# ax0.set_ylim(solRho[0],solRho[2])
-		# ax0.tick_params(axis='both', which='major', labelsize=15)
-		# ax0.set_aspect('equal')
 		### [NEW] PLOT: Symmetry Breaking Projection (Mean vs Std)
 		mean_rho = np.mean(rho_1d.real, axis=1) 
 		std_rho  = np.std(rho_1d.real, axis=1)  	
