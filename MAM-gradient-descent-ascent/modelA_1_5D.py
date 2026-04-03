@@ -170,9 +170,9 @@ aa = 2.   #noise amplitude
 
 
 upward = False # choose if path from -1 to +1 (upward), or the opposite
-previous_data = False
+previous_data = True
 reverse = False
-threshold = 100
+threshold = 1000
 
 D     = 5
 kappa = 0.26
@@ -183,7 +183,7 @@ dtau = 0.5
 
 iterations = 40000
 plotStep   = 200
-resume_file = "checkpoints/checkpoint14_1.npz"
+resume_file = "checkpoints/checkpoint_local.npz"
 r = dtau/dnu
 print('conditions: Ly,Lx,Ncopy =', Ly,Lx,Ncopy, 'h =', h, 'D =', D, 'kappa =', kappa, 'dtau =', dtau, 'iterations =', iterations, 'Tmax =', Tmax)
 
@@ -328,33 +328,54 @@ else:
 reaction_U_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 reaction_V_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 
+extract_ratio = 1.0
 
 ######  INITIAL CONDITIONS 
 if previous_data == True:
-	if os.path.exists('checkpoints/checkpoint14.npz'):
-		data = np.load('checkpoints/checkpoint14.npz')
+	if os.path.exists('checkpoints/checkpoint24.npz'):
+		data = np.load('checkpoints/checkpoint24.npz')
 		rho_old = data['rho']
 		theta_old = data['theta']
 		T_old = data['Tmax']
 		Ncopy_old = data['Ncopy']
+		Ly_old = data['Ly']
+		Lx_old = data['Lx']
+
+		# extract rho and theta from 0 to 0.9*T_old
+		rho_old = rho_old[:int(extract_ratio*Ncopy_old),:,:]
+		theta_old = theta_old[:int(extract_ratio*Ncopy_old),:,:]
+		# rho_old = rho_old[int((1-extract_ratio)*Ncopy_old+1):,:,:]
+		# theta_old = theta_old[int((1-extract_ratio)*Ncopy_old+1):,:,:]
+		Ncopy_old = int(extract_ratio*Ncopy_old)
+		T_old = T_old * extract_ratio
+
+		# shift rho and theta by Ly//2
+		# rho_old = np.roll(rho_old, Ly//2, axis=1)
+		# theta_old = np.roll(theta_old, Ly//2, axis=1)
+		# # 2. 建立新、舊路徑的真實物理參數網格
+		# s_old = np.linspace(0, T_old, Ncopy_old)
+		# s_new = np.linspace(0, Tmax, Ncopy) # Tmax 是你現在設定的 30.0
+		# s_map = s_new * (T_old / Tmax)
+		# f_rho = interp1d(s_old, rho_old, axis=0, kind='linear')
+		# f_theta = interp1d(s_old, theta_old, axis=0, kind='linear')
+
+		# # 5. 一行指令，直接把整條 3D 陣列插值出來！(取代了你原本的 for j in range 迴圈)
+		# rho = f_rho(s_map)
+		# theta = f_theta(s_map)
 
 
-		# 2. 建立新、舊路徑的真實物理參數網格
-		s_old = np.linspace(0, T_old, Ncopy_old)
-		s_new = np.linspace(0, Tmax, Ncopy) # Tmax 是你現在設定的 30.0
-		s_map = s_new * (T_old / Tmax)
-		f_rho = interp1d(s_old, rho_old, axis=0, kind='linear')
-		f_theta = interp1d(s_old, theta_old, axis=0, kind='linear')
-
-		# 5. 一行指令，直接把整條 3D 陣列插值出來！(取代了你原本的 for j in range 迴圈)
-		rho = f_rho(s_map)
-		theta = f_theta(s_map)
+		import scipy.ndimage as ndimage
+		zoom_factors = (Ncopy / Ncopy_old, Ly / Ly_old, Lx / Lx_old)
+		rho = ndimage.zoom(rho_old.real, zoom_factors, order=1).astype(complex)
+		theta = ndimage.zoom(theta_old.real, zoom_factors, order=1).astype(complex)
 		if reverse == True:
 			# reverse rho in time
 			rho = rho[::-1,:,:]
 			theta = theta[::-1,:,:]
 		rho[0,:,:]       = rho1
 		rho[Ncopy-1,:,:] = rho2
+		print("rho shape", rho.shape)
+		print("theta shape", theta.shape)
 else:
 	# deterministically set the initial condition
 	amp = 0.8
@@ -388,14 +409,14 @@ else:
 			tt = float(j)/Ncopy
 			linear = rho1*(1-tt) + tt*rho2
 			# bubble growth in 1D chain (smooth initial condition)
-			current_radius = tt * max_radius
-			dist = np.sqrt((Y - Ly/2)**2 + (X - Lx/2)**2)
-			w = np.sqrt(D) / h  
-			if w < 1.0: w = 1.0 
-			profile = 0.5 * (solRho[2] - solRho[0]) * np.tanh((dist - current_radius) / w) + 0.5 * (solRho[2] + solRho[0])
-			rho[j, :, :] = profile + 0j
+			# current_radius = tt * max_radius
+			# dist = np.sqrt((Y - Ly/2)**2 + (X - Lx/2)**2)
+			# w = np.sqrt(D) / h  
+			# if w < 1.0: w = 1.0 
+			# profile = 0.5 * (solRho[2] - solRho[0]) * np.tanh((dist - current_radius) / w) + 0.5 * (solRho[2] + solRho[0])
+			# rho[j, :, :] = profile + 0j
 			# bump = amp * np.square(np.sin(PI * Y / Ly)) * np.power(np.sin(PI * tt), 2)
-			# rho[j, :, :] = linear + bump
+			rho[j, :, :] = linear #+ bump
 ### PLOT rho
 fig = plt.figure(figsize=(10,10),layout='constrained')
 rho_1d = rho.reshape(Ncopy, -1)
@@ -673,7 +694,7 @@ for i in range(start_iter, iterations+1):
 			print(f"Time taken: {end_time - start_time} seconds", "iteration", i)
 		plt.clf()
 		plt.close()
-		np.savez_compressed('checkpoints/checkpoint.npz', rho=rho, theta=theta, iteration=i, Lx=Lx, Ly=Ly, h=h, Ncopy=Ncopy, Tmax=Tmax, aa=aa, D=D, kappa=kappa, dtau=dtau, upward=upward, iterations=i, plotStep=plotStep)
+		np.savez_compressed('checkpoints/checkpoint_local.npz', rho=rho, theta=theta, iteration=i, Lx=Lx, Ly=Ly, h=h, Ncopy=Ncopy, Tmax=Tmax, aa=aa, D=D, kappa=kappa, dtau=dtau, upward=upward, iterations=i, plotStep=plotStep)
 # Animate for any L
 animate_any_boxes(rho_1d.real, theta_1d.real, filename=f"boxes_L{int(Ly)}.mp4", dnu=dnu, skip=4, fps=25)
 
