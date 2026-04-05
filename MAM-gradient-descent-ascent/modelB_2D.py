@@ -98,7 +98,7 @@ Lx = 100
 Ly = 100
 h  = 0.2
 Ncopy = 400
-Tmax = 100.
+Tmax = 400.
 
 s = np.linspace(0,Tmax,Ncopy)
 ds  = s[1]-s[0]
@@ -106,9 +106,10 @@ dnu = s[1]-s[0]
 aa = 2.   #noise amplitude
 
 
-upward = False # True if droplet to stripe, False if stripe to droplet
+upward = True # True if droplet to stripe, False if stripe to droplet
 previous_data = True
-reverse = False
+path_reverse = False
+boundary_reverse = True
 threshold = 1000
 
 D     = 1
@@ -122,15 +123,15 @@ solRho = np.array([-1.0, 0.0, 1.0]) # rho-, rhos, rho+
 
 dtau = 0.1 
 
-iterations = 10000
-plotStep   = 100
+iterations = 20000
+plotStep   = 200
 
 r = dtau/dnu
 resume_file = "checkpoints/modelB/checkpoint_local.npz"
-relaxed_file = 'checkpoints/modelB/relaxed.npz'
+relaxed_file = 'checkpoints/modelB/relaxed_2d_6.npz'
 print('conditions: Ly,Lx,Ncopy =', Ly,Lx,Ncopy, 'h =', h, 'D =', D, 'dtau =', dtau, 'iterations =', iterations, 'Tmax =', Tmax)
 # === IMEX 穩定化（對應 modified 的 k4、gamma）===
-gamma = 2.0   # 與 modified 相同，壓制高頻
+gamma = 1.0   # 與 modified 相同，壓制高頻
 # 2D Fourier 波數（與 fft2(..., axes=(1,2)) 對應）
 kx = 2 * PI * sp_fft.fftfreq(Lx, d=h)
 ky = 2 * PI * sp_fft.fftfreq(Ly, d=h)
@@ -241,10 +242,16 @@ relax_steps = 20000
 
 if os.path.exists(relaxed_file):
 	data = np.load(relaxed_file)
-	rho1 = data['rho1']
-	rho1k = sp_fft.fft2(rho1)
-	rho2 = data['rho2']
-	rho2k = sp_fft.fft2(rho2)
+	if boundary_reverse == True:
+		rho1 = data['rho2']
+		rho1k = sp_fft.fft2(rho1)
+		rho2 = data['rho1']
+		rho2k = sp_fft.fft2(rho2)
+	else:
+		rho1 = data['rho1']
+		rho1k = sp_fft.fft2(rho1)
+		rho2 = data['rho2']
+		rho2k = sp_fft.fft2(rho2)
 else:	
 	def relax_model_b_smart(rho_state, tol=1e-7, max_steps=500000, noise_amp=0.01):
 		rho_2d = rho_state.copy().real
@@ -311,6 +318,10 @@ else:
 	rho1 = relax_model_b_smart(rho1,max_steps=1000000)
 	print("--- 放鬆終點 rho2 ---")
 	rho2 = relax_model_b_smart(rho2,max_steps=1000000)
+	target_mass = np.mean(rho2)
+	rho1 = rho1 - np.mean(rho1) + target_mass
+	# mass_diff = np.sum(rho2) - np.sum(rho1)
+	# rho1[0, 0] += mass_diff
 	np.savez('checkpoints/modelB/relaxed.npz', rho1=rho1, rho2=rho2)
 	fig_relax, (ax_r1, ax_r2, ax_r3) = plt.subplots(1, 3, figsize=(15, 4), layout='constrained')
 
@@ -347,6 +358,9 @@ else:
 	print(f"[*] Saved relaxed states plot to: {relax_plot_name}")
 	rho1k = sp_fft.fft2(rho1)
 	rho2k = sp_fft.fft2(rho2)
+rho1[0, 0] += (np.sum(rho2) - np.sum(rho1))
+rho1k = sp_fft.fft2(rho1)
+rho2k = sp_fft.fft2(rho2)
 print("mass of rho1", np.sum(rho1))
 print("mass of rho2", np.sum(rho2))
 
@@ -356,8 +370,8 @@ extract_ratio = 1.0
 ######  Initial guess
 
 if previous_data == True:
-	if os.path.exists('checkpoints/modelB/checkpoint_b_2d_5.npz'):
-		data = np.load('checkpoints/modelB/checkpoint_b_2d_5.npz')
+	if os.path.exists('checkpoints/modelB/checkpoint_b_2d_5_6.npz'):
+		data = np.load('checkpoints/modelB/checkpoint_b_2d_5_6.npz')
 		rho_old = data['rho']
 		theta_old = data['theta']
 		T_old = data['Tmax']
@@ -377,13 +391,35 @@ if previous_data == True:
 		# rho_old = np.roll(rho_old, Ly//2, axis=1)
 		# theta_old = np.roll(theta_old, Ly//2, axis=1)
 		import scipy.ndimage as ndimage
+
+		# pad_start = 20  # 在 rho1 (Stripe) 停留的步數
+		# pad_end   = 20  # 在 rho2 (Droplet) 停留的步數
+		# N_active  = Ncopy - pad_start - pad_end  # 中間實際用來演化的步數
+		# zoom_factors = (N_active / Ncopy_old, Ly / Ly_old, Lx / Lx_old)
+		# rho_active = ndimage.zoom(rho_old.real, zoom_factors, order=1).astype(complex)
+		# theta_active = ndimage.zoom(theta_old.real, zoom_factors, order=1).astype(complex)
 		zoom_factors = (Ncopy / Ncopy_old, Ly / Ly_old, Lx / Lx_old)
 		rho = ndimage.zoom(rho_old.real, zoom_factors, order=1).astype(complex)
 		theta = ndimage.zoom(theta_old.real, zoom_factors, order=1).astype(complex)
-		if reverse == True:
+		if path_reverse == True:
 			# reverse rho in time
 			rho = rho[::-1,:,:]
 			theta = theta[::-1,:,:]
+		# if path_reverse == True:
+		# 	rho_active = rho_active[::-1,:,:]
+		# 	theta_active = theta_active[::-1,:,:]
+		# rho = np.zeros((Ncopy, Ly, Lx), dtype=complex)
+		# theta = np.zeros((Ncopy, Ly, Lx), dtype=complex)
+		# rho[0:pad_start, :, :] = rho1
+		# theta[0:pad_start, :, :] = 0.0 + 0j
+		# rho[pad_start:Ncopy-pad_end, :, :] = rho_active
+		# theta[pad_start:Ncopy-pad_end, :, :] = theta_active
+		# rho[Ncopy-pad_end:, :, :] = rho2
+		# theta[Ncopy-pad_end:, :, :] = 0.0 + 0j
+		# rho[0,:,:]       = rho1
+		# rho[Ncopy-1,:,:] = rho2
+		# theta[0,:,:]     = 0.0 + 0j
+		# theta[Ncopy-1,:,:]= 0.0 + 0j
 		rho[0,:,:]       = rho1
 		rho[Ncopy-1,:,:] = rho2
 		print("rho shape", rho.shape)
@@ -550,78 +586,116 @@ for i in range(start_iter, iterations+1):
 		rho_1d = rho.reshape(Ncopy, -1)
 		theta_1d = theta.reshape(Ncopy, -1)
 		plt.gcf()
-		fig = plt.figure(figsize=(10,10),layout='constrained')
+		fig = plt.figure(figsize=(15,10),layout='constrained')
 		# 4 subplots: 1. rho, 2. theta, 3. Lagrangian, 4. Hamiltonian 2 rows 2 columns
-		ax0 = fig.add_subplot(222)
-		ax1 = fig.add_subplot(221)
-		ax2 = fig.add_subplot(223)
-		ax3 = fig.add_subplot(224)
+		ax0 = fig.add_subplot(233)
+		ax1 = fig.add_subplot(231)
+		theta_of_ax1 = fig.add_subplot(232)
+		ax3 = fig.add_subplot(235)
+		theta_of_ax3 = fig.add_subplot(236)
+		largest_Lag_ax = fig.add_subplot(234)
 		Lag = Lagrangian(h, dnu, rho_1d, theta_1d).real
 		actionS = dnu* np.sum(Lag)*h**2*aa
-		
-		fig.suptitle(r'$N_t=$'+str(int(Ncopy))+r', $L_x\times L_y=$'+str(int(Ly*h))+r'$\times$'+str(int(Lx*h))+r', h='+str(h)+r', $\Delta \tau=$'+str(dtau)+r', $D=$'+str(D) +r', $T_\mathrm{max}=$'+str("%.1f"%Tmax)+"\n"+", $S=$"+str("%.6f"%(actionS))+r', $\tau=$ '+ str(i*dtau), fontsize=20)
-		
-		### [NEW] PLOT: Symmetry Breaking Projection (Mean vs Std)
-		mean_rho = np.mean(rho_1d.real, axis=1) 
-		std_rho  = np.std(rho_1d.real, axis=1)  	
-
-		im = ax0.scatter(std_rho, mean_rho, c=np.linspace(0,1,Ncopy), cmap='viridis', s=15, zorder=10) 
-		ax0.plot(std_rho, mean_rho, color='darkblue', linewidth=2, label='Instanton Path')
-		ax0.axvline(0, color='gray', linestyle='--', alpha=0.5, label='Homogeneous (Symmetric)')
-
-		ax0.set_xlabel(r'Inhomogeneity $\sigma_\rho$ (Std Dev)', fontsize=15)
-		ax0.set_ylabel(r'Mean Density $\bar{\rho}$', fontsize=15)
-		ax0.set_title(r'Symmetry Breaking Projection', fontsize=16)
-        
-		ax0.grid(True, linestyle=':', alpha=0.6)
-		ax0.set_xlim(left=-0.05, right=max(std_rho.max()*1.2, 0.5)) 
-		ax0.set_ylim(solRho[0]-0.2, solRho[2]+0.2)
-		ax0.legend(loc='best', fontsize=12)
-		## colorbar
-		cbar = fig.colorbar(im, ax=ax0, shrink=0.8)
-		cbar.set_label(r'Time', fontsize=20)
+		largest_Lag_time_index = np.argmax(Lag[2:-10]*h**2*aa)+2
+		fig.suptitle(r'$N_t=$'+str(int(Ncopy))+r', $L_x\times L_y=$'+str(int(Ly*h))+r'$\times$'+str(int(Lx*h))+r', h='+str(h)+r', $\Delta \tau=$'+str(dtau)+r', $D=$'+str(D) +r', $T_\mathrm{max}=$'+str("%.1f"%Tmax)+"\n"+"$S=$"+str("%.6f"%(actionS))+r', $\tau=$ '+ str(i*dtau), fontsize=20)
 
 		### PLOT rho
 		mid_y = Ly // 2
-		rho_slice = rho[:, mid_y, :].real.T
+		rho_slice = rho[:, mid_y, :].real
 		t_edges = np.linspace(0, Tmax, Ncopy + 1)
 		x_edges = np.arange(Lx + 1) - 0.5 # 現在 Y 軸是 X 空間座標
-		im = ax1.pcolormesh(t_edges, x_edges, rho_slice, 
+		im = ax1.pcolormesh(x_edges, t_edges, rho_slice, 
                            cmap='coolwarm', 
                            shading='flat',
                            vmin=-1.5, vmax=1.5)
 		cbar = fig.colorbar(im, ax=ax1, shrink=0.8)
 		cbar.set_label(r'$\rho(x, y_{mid}, t)$', fontsize=20)
+		ax1.plot([0,Lx-1], [t_edges[largest_Lag_time_index], t_edges[largest_Lag_time_index]], linewidth=2, color='red')
 		ax1.tick_params(axis='both', which='major', labelsize=15)
-		ax1.set_yticks([0, Lx-1])
-		ax1.set_xlabel('Time', fontsize=20)
-		ax1.set_ylabel(f'X Coordinate (at y={mid_y})', fontsize=15)
+		ax1.set_xticks([0, Lx-1])
+		ax1.set_ylabel('Time', fontsize=20)
+		ax1.set_xlabel(f'X Coordinate (at y={mid_y})', fontsize=15)
 		Lag = Lagrangian(h, dnu, rho_1d, theta_1d).real
 		actionS = dnu* np.sum(Lag)*h**2*aa
 
 		### PLOT theta
-		theta_slice = theta[:, mid_y, :].real.T
-		im2 = ax2.pcolormesh(t_edges, x_edges, theta_slice, 
+		theta_slice = theta[:, mid_y, :].real
+		min_theta = theta_slice.min()
+		max_theta = theta_slice.max()
+		im2 = theta_of_ax1.pcolormesh(x_edges, t_edges , theta_slice, 
 							cmap='bwr', 
 							shading='flat',
-							vmin=-0.5, vmax=0.5)
-		cbar2 = fig.colorbar(im2, ax=ax2, shrink=0.8)
+							vmin=-0.05, vmax=0.05)
+		cbar2 = fig.colorbar(im2, ax=theta_of_ax1, shrink=0.8)
 		cbar2.set_label(r'$\theta(x, y_{mid}, t)$', fontsize=20)
-		ax2.tick_params(axis='both', which='major', labelsize=15)
-		ax2.set_yticks([0, Lx-1])
-		ax2.set_xlabel('Time', fontsize=20)
-		ax2.set_ylabel(f'X Coordinate (at y={mid_y})', fontsize=15)
-
+		theta_of_ax1.plot([0,Lx-1], [t_edges[largest_Lag_time_index], t_edges[largest_Lag_time_index]], linewidth=2, color='red')
+		theta_of_ax1.tick_params(axis='both', which='major', labelsize=15)
+		theta_of_ax1.set_xticks([0, Lx-1])
+		theta_of_ax1.set_ylabel('Time', fontsize=20)
+		theta_of_ax1.set_xlabel(f'X Coordinate (at y={mid_y})', fontsize=15)
+		
 		### PLOT Lagrangian and Hamiltonian
-		ax3.set_aspect('auto')
-		ax3.plot(np.linspace(0,1,Ncopy), Lag*h**2*aa, label=r'$L(\rho,\dot\rho)$', color='black'  ) 
-		ax3.plot(np.linspace(0,1,Ncopy), Hamiltonian(h,rho_1d, theta_1d).real*h**2*aa, label=r'$H(\rho,\theta)$', color='brown' , linestyle='-.') 
-		plt.legend(loc='best', fontsize=14)
+		ax0.set_aspect('auto')
+		ax0.plot(np.linspace(0,1,Ncopy), Lag*h**2*aa, label=r'$L(\rho,\dot\rho)$', color='black'  ) 
+		ax0.plot(np.linspace(0,1,Ncopy), Hamiltonian(h,rho_1d, theta_1d).real*h**2*aa, label=r'$H(\rho,\theta)$', color='brown' , linestyle='-.') 
+		ax0.plot([t_edges[largest_Lag_time_index]/Tmax, t_edges[largest_Lag_time_index]/Tmax], [-1, 1], linewidth=2, color='red')
+		ax0.legend(loc='best', fontsize=14)
+		ax0.tick_params(axis='both', which='major', labelsize=15)
+		ax0.set_xlabel(r'$t/T_\mathrm{Max}$', fontsize=20)
+		ax0.set_ylabel(r'$L$', fontsize=20)
+		ax0.set_xlim(0,1)
+		ax0.set_ylim(-0.05*max(Lag[2:-10].max()*h**2*aa, Hamiltonian(h,rho_1d, theta_1d).real[2:-10].max()*h**2*aa), max(Lag[2:-10].max()*h**2*aa, Hamiltonian(h,rho_1d, theta_1d).real[2:-10].max()*h**2*aa)*1.2)
+		
+		# Plot rho
+		mid_x = Lx // 2
+		rho_slice = rho[:, :, mid_x].real.T
+		t_edges = np.linspace(0, Tmax, Ncopy + 1)
+		y_edges = np.arange(Ly + 1) - 0.5 # 現在 Y 軸是 X 空間座標
+		im = ax3.pcolormesh(t_edges, y_edges, rho_slice, 
+                           cmap='coolwarm', 
+                           shading='flat',
+                           vmin=-1.5, vmax=1.5)
+		cbar = fig.colorbar(im, ax=ax3, shrink=0.8)
+		cbar.set_label(r'$\rho(x_{mid}, y, t)$', fontsize=20)
+		ax3.plot([t_edges[largest_Lag_time_index], t_edges[largest_Lag_time_index]], [0, Ly-1], linewidth=2, color='red')
 		ax3.tick_params(axis='both', which='major', labelsize=15)
-		ax3.set_xlabel(r'$t/T_\mathrm{Max}$', fontsize=20)
-		ax3.set_ylabel(r'$L$', fontsize=20)
-		ax3.set_xlim(0,1)
-		ax3.set_ylim(-0.01*max(Lag[2:-10].max()*h**2*aa, Hamiltonian(h,rho_1d, theta_1d).real[2:-10].max()*h**2*aa), max(Lag[2:-10].max()*h**2*aa, Hamiltonian(h,rho_1d, theta_1d).real[2:-10].max()*h**2*aa)*1.2)
+		ax3.set_yticks([0, Ly-1])
+		ax3.set_xlabel('Time', fontsize=20)
+		ax3.set_ylabel(f'Y Coordinate (at x={mid_x})', fontsize=15)
+		Lag = Lagrangian(h, dnu, rho_1d, theta_1d).real
+		actionS = dnu* np.sum(Lag)*h**2*aa
+
+		### PLOT theta
+		theta_slice = theta[:, :, mid_x].real.T
+		min_theta = theta_slice.min()
+		max_theta = theta_slice.max()
+		im2 = theta_of_ax3.pcolormesh(t_edges, y_edges, theta_slice, 
+							cmap='bwr', 
+							shading='flat',
+							vmin=-0.05, vmax=0.05)
+		cbar2 = fig.colorbar(im2, ax=theta_of_ax3, shrink=0.8)
+		cbar2.set_label(r'$\theta(x_{mid}, y, t)$', fontsize=20)
+		theta_of_ax3.plot([t_edges[largest_Lag_time_index], t_edges[largest_Lag_time_index]], [0, Ly-1], linewidth=2, color='red')
+		theta_of_ax3.tick_params(axis='both', which='major', labelsize=15)
+		theta_of_ax3.set_yticks([0, Ly-1])
+		theta_of_ax3.set_xlabel('Time', fontsize=20)
+		theta_of_ax3.set_ylabel(f'Y Coordinate (at x={mid_x})', fontsize=15)
+		
+		# find the time index of the largest Lag
+		rho_slice = rho[largest_Lag_time_index, :, :].real
+		im = largest_Lag_ax.pcolormesh(x_edges, y_edges, rho_slice, 
+							cmap='coolwarm', 
+							shading='flat',
+							vmin=-1.5, vmax=1.5)
+		largest_Lag_ax.plot([0,Lx-1], [Ly//2, Ly//2], linewidth=2, color='red')
+		largest_Lag_ax.plot([Lx//2, Lx//2], [0, Ly-1], linewidth=2, color='red')
+		cbar = fig.colorbar(im, ax=largest_Lag_ax, shrink=0.8)
+		cbar.set_label(r'$\rho(x, y, t)$', fontsize=20)
+		largest_Lag_ax.tick_params(axis='both', which='major', labelsize=15)
+		largest_Lag_ax.set_xlabel('X Coordinate', fontsize=20)
+		largest_Lag_ax.set_ylabel('Y Coordinate', fontsize=20)
+		largest_Lag_ax.set_title(r'$\rho$ at largest L', fontsize=20)
+
 		if i > start_iter:
 			Lag = Lagrangian(h, dnu, rho_1d, theta_1d).real
 			print('Lag max, min:', Lag.max()*h**2*aa, Lag.min()*h**2*aa)
