@@ -190,8 +190,7 @@ reaction_U = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 reaction_V = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 
 
-
-
+######  Boundary conditions
 if(upward==True):
 	rho1 = solRho[0] * np.ones((Ly,Lx), dtype=complex)
 	rho1k = np.fft.fft2(rho1)
@@ -209,7 +208,7 @@ reaction_V_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 
 extract_ratio = 1.0
 
-######  INITIAL CONDITIONS 
+######  Initial guess
 if previous_data == True:
 	if os.path.exists('checkpoints/GL2D/checkpoint_2d_3.npz'):
 		data = np.load('checkpoints/GL2D/checkpoint_2d_3.npz')
@@ -284,25 +283,6 @@ else:
 			# rho[j, :, :] = profile + 0j
 			# bump = amp * np.square(np.sin(PI * Y / Ly)) * np.power(np.sin(PI * tt), 2)
 			rho[j, :, :] = linear + 0j
-### PLOT rho
-fig = plt.figure(figsize=(15,5),layout='constrained')
-ax0 = fig.add_subplot(131)
-ax1 = fig.add_subplot(132)
-ax2 = fig.add_subplot(133)
-rho_2d_initial = rho[1,:,:].real
-rho_2d_middle = rho[Ncopy//2,:,:].real
-rho_2d_final = rho[Ncopy-2,:,:].real
-im0 = ax0.imshow(rho_2d_initial, cmap='coolwarm', vmin=-1.5, vmax=1.5)
-im1 = ax1.imshow(rho_2d_middle, cmap='coolwarm', vmin=-1.5, vmax=1.5)
-im2 = ax2.imshow(rho_2d_final, cmap='coolwarm', vmin=-1.5, vmax=1.5)
-# add colorbar
-cbar = fig.colorbar(im2, ax=ax2, shrink=0.8)
-cbar.set_label(r'$\rho$', fontsize=20)
-ax0.set_title('Initial')
-ax1.set_title('Middle')
-ax2.set_title('Final')
-plt.savefig('rho_2d.png',dpi=300,bbox_inches='tight')
-
 U = rho + theta
 V = rho - theta
 

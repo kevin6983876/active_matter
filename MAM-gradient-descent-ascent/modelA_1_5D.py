@@ -27,91 +27,6 @@ def Lagrangian(h, ds, rho, theta): #return an array of size Ncopy, axis=1 sums t
 	L =  np.sum( rhoDot * theta, axis=1 ) - Ham
 	return L
 
-
-def animate_any_boxes(rho, theta, filename="boxes_evolution.mp4", dnu=None, skip=1, fps=30):
-    """
-    Generic Live bar chart animation for any L (L=2, 3, ...).
-    """
-    rho = np.asarray(rho).real
-    theta = np.asarray(theta).real
-    Nt, L = rho.shape  # 自動偵測 L
-    
-    if dnu is None:
-        dnu = 1.0 / max(Nt - 1, 1)
-
-    # Downsample
-    indices = np.arange(0, Nt, skip)
-    if len(indices) > 200:
-        indices = np.linspace(0, Nt - 1, 150, dtype=int)
-    rho_sub = rho[indices]
-    theta_sub = theta[indices]
-    n_frames = len(indices)
-
-    # Setup Colors
-    theta_max = max(np.abs(theta).max(), 0.01)
-    norm = plt.Normalize(vmin=-theta_max, vmax=theta_max)
-    cmap = plt.cm.coolwarm
-
-    # Setup Figure
-    fig, ax = plt.subplots(figsize=(max(4, L*1.5), 5), layout='constrained') # 寬度隨 L 自動調整
-    ax.set_ylim(-1.5, 1.5)
-    ax.set_xlim(-0.8, L - 0.2)
-    ax.set_xticks(range(L))
-    ax.set_xticklabels([f"Box {i+1}" for i in range(L)]) # 自動產生 Box 1, Box 2...
-    ax.axhline(0, color="k", lw=0.5)
-    ax.set_ylabel(r"$\rho$ (density)")
-    
-    # Colorbar
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([])
-    cbar = fig.colorbar(sm, ax=ax, shrink=0.8)
-    cbar.set_label(r"Noise Force ($\theta$)")
-
-    # Initialize Bars
-    initial_colors = [cmap(norm(theta_sub[0, i])) for i in range(L)]
-    bars = ax.bar(range(L), rho_sub[0], color=initial_colors, width=0.6, edgecolor="k")
-    
-    ann = ax.text(0.5, 1.15, "", transform=ax.transAxes, ha="center", fontsize=12, fontweight="bold")
-
-    def update(frame_idx):
-        rho_f = rho_sub[frame_idx]
-        theta_f = theta_sub[frame_idx]
-        t = indices[frame_idx] * dnu
-        
-        # Update each bar
-        for i, b in enumerate(bars):
-            b.set_height(rho_f[i])
-            b.set_color(cmap(norm(theta_f[i])))
-            
-        ax.set_title(r"Time: {:.2f} | Action Density".format(t))
-        
-        # Generalized Symmetry Breaking Detection
-        # 計算標準差，如果 > 0.1 代表有盒子長得不一樣
-        std_dev = np.std(rho_f)
-        if std_dev > 0.1:
-            ann.set_text(f"Symmetry Breaking (std={std_dev:.2f})")
-            ann.set_color("red")
-        else:
-            ann.set_text("Homogeneous")
-            ann.set_color("black")
-            
-        return list(bars) + [ann]
-
-    anim = FuncAnimation(fig, update, frames=n_frames, blit=False, interval=1000.0 / fps)
-    
-    # Save logic (same as before)
-    ext = filename.rsplit(".", 1)[-1].lower()
-    if ext == "mp4":
-        try:
-            anim.save(filename, writer="ffmpeg", fps=fps, dpi=100)
-        except Exception:
-            anim.save(filename.replace(".mp4", ".gif"), writer="pillow", fps=fps, dpi=100)
-    else:
-        anim.save(filename, writer="pillow", fps=fps, dpi=100)
-    plt.close(fig)
-    print(f"Saved animation for L={L}: {filename}")
-
-
 ################################
 """ Start MAM """
 ##############################
@@ -272,7 +187,7 @@ reaction_V = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 
 
 
-
+######  Boundary conditions
 if(upward==True):
 	rho1 = solRho[0] * np.ones((Ly,Lx), dtype=complex)
 	rho1k = np.fft.fft2(rho1)
@@ -290,7 +205,7 @@ reaction_V_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 
 extract_ratio = 1.0
 
-######  INITIAL CONDITIONS 
+######  Initial guess
 if previous_data == True:
 	if os.path.exists('checkpoints/checkpoint24.npz'):
 		data = np.load('checkpoints/checkpoint24.npz')
@@ -365,26 +280,6 @@ else:
 			# rho[j, :, :] = profile + 0j
 			# bump = amp * np.square(np.sin(PI * Y / Ly)) * np.power(np.sin(PI * tt), 2)
 			rho[j, :, :] = linear #+ bump
-### PLOT rho
-fig = plt.figure(figsize=(10,10),layout='constrained')
-rho_1d = rho.reshape(Ncopy, -1)
-rho_map = rho_1d.real.T  # Shape: (Ly*Lx, Ncopy)
-t_edges = np.linspace(0, Tmax, Ncopy + 1)
-n_space = rho_1d.shape[1]  # Ly*Lx
-x_edges = np.arange(n_space + 1) - 0.5
-
-im = plt.pcolormesh(t_edges, x_edges, rho_map, 
-					cmap='coolwarm', 
-					shading='flat',
-					vmin=-1.5, vmax=1.5)
-cbar = plt.colorbar(im, shrink=0.8)
-cbar.set_label(r'$\rho$', fontsize=20)
-plt.tick_params(axis='both', which='major', labelsize=15)
-plt.yticks([0, n_space-1])
-plt.xlabel('Time', fontsize=20)
-plt.ylabel('Space index (0 to L-1)', fontsize=20)
-plt.savefig('rho_initial.png')
-
 U = rho + theta
 V = rho - theta
 
