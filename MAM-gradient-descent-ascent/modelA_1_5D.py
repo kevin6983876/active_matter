@@ -1,53 +1,17 @@
-from numpy import loadtxt
-from matplotlib import cm
 import math
-import cmath
 import time
 import os
-
 import numpy as np
-
-import matplotlib.pyplot as plt
-from matplotlib import rc
-
-from itertools import count
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from scipy import sparse
 from scipy.sparse.linalg import factorized
-from scipy.linalg import solve_triangular, solve_banded
-from scipy.interpolate import interp1d
-#rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
-## for Palatino and other serif fonts use:
-#rc('font',**{'family':'serif','serif':['Palatino']})
-#rc('text', usetex=True)
-
-
-
-import time
+from scipy.linalg import solve_banded
 start_time = time.time()
-
 PI = math.pi
-
-def normL2(h, array): #norm L2, spacing h for integration
-	norm = math.sqrt( h * np.sum( np.square( array.real ) ) )
-	return norm
-
-def normL2Big(h, array): #norm L2, spacing h for integration
-	norm = np.sqrt( h * np.sum( np.square( array.real ), axis=1 ) )
-	return norm
-
-
-
-
 ##############################
 """ DEFINE FUNCTIONS """
 ###############################
-
-from scipy.linalg import solve_triangular
-#x = solve_triangular(a, b, lower=True)
-
-
 def Hamiltonian(h, rho, theta): #return an array of size Ncopy, axis=1 sums the colums
 	L_spatial = rho.shape[1]
 	H = np.sum( (D*(np.roll(rho,-1, axis=1) +  np.roll(rho,1, axis=1) -2* rho)/h**2 + rho -rho**3 + kappa*np.outer(np.mean(rho**2,axis=1), np.ones(L_spatial)))*theta + 0.5*aa*theta**2     ,  axis=1)
@@ -62,95 +26,6 @@ def Lagrangian(h, ds, rho, theta): #return an array of size Ncopy, axis=1 sums t
 	Ham = Hamiltonian(h, rho, theta)
 	L =  np.sum( rhoDot * theta, axis=1 ) - Ham
 	return L
-
-
-def animate_any_boxes(rho, theta, filename="boxes_evolution.mp4", dnu=None, skip=1, fps=30):
-    """
-    Generic Live bar chart animation for any L (L=2, 3, ...).
-    """
-    rho = np.asarray(rho).real
-    theta = np.asarray(theta).real
-    Nt, L = rho.shape  # 自動偵測 L
-    
-    if dnu is None:
-        dnu = 1.0 / max(Nt - 1, 1)
-
-    # Downsample
-    indices = np.arange(0, Nt, skip)
-    if len(indices) > 200:
-        indices = np.linspace(0, Nt - 1, 150, dtype=int)
-    rho_sub = rho[indices]
-    theta_sub = theta[indices]
-    n_frames = len(indices)
-
-    # Setup Colors
-    theta_max = max(np.abs(theta).max(), 0.01)
-    norm = plt.Normalize(vmin=-theta_max, vmax=theta_max)
-    cmap = plt.cm.coolwarm
-
-    # Setup Figure
-    fig, ax = plt.subplots(figsize=(max(4, L*1.5), 5), constrained_layout=True) # 寬度隨 L 自動調整
-    ax.set_ylim(-1.5, 1.5)
-    ax.set_xlim(-0.8, L - 0.2)
-    ax.set_xticks(range(L))
-    ax.set_xticklabels([f"Box {i+1}" for i in range(L)]) # 自動產生 Box 1, Box 2...
-    ax.axhline(0, color="k", lw=0.5)
-    ax.set_ylabel(r"$\rho$ (density)")
-    
-    # Colorbar
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([])
-    cbar = fig.colorbar(sm, ax=ax, shrink=0.8)
-    cbar.set_label(r"Noise Force ($\theta$)")
-
-    # Initialize Bars
-    initial_colors = [cmap(norm(theta_sub[0, i])) for i in range(L)]
-    bars = ax.bar(range(L), rho_sub[0], color=initial_colors, width=0.6, edgecolor="k")
-    
-    ann = ax.text(0.5, 1.15, "", transform=ax.transAxes, ha="center", fontsize=12, fontweight="bold")
-
-    def update(frame_idx):
-        rho_f = rho_sub[frame_idx]
-        theta_f = theta_sub[frame_idx]
-        t = indices[frame_idx] * dnu
-        
-        # Update each bar
-        for i, b in enumerate(bars):
-            b.set_height(rho_f[i])
-            b.set_color(cmap(norm(theta_f[i])))
-            
-        ax.set_title(r"Time: {:.2f} | Action Density".format(t))
-        
-        # Generalized Symmetry Breaking Detection
-        # 計算標準差，如果 > 0.1 代表有盒子長得不一樣
-        std_dev = np.std(rho_f)
-        if std_dev > 0.1:
-            ann.set_text(f"Symmetry Breaking (std={std_dev:.2f})")
-            ann.set_color("red")
-        else:
-            ann.set_text("Homogeneous")
-            ann.set_color("black")
-            
-        return list(bars) + [ann]
-
-    anim = FuncAnimation(fig, update, frames=n_frames, blit=False, interval=1000.0 / fps)
-    
-    # Save logic (same as before)
-    ext = filename.rsplit(".", 1)[-1].lower()
-    if ext == "mp4":
-        try:
-            anim.save(filename, writer="ffmpeg", fps=fps, dpi=100)
-        except Exception:
-            anim.save(filename.replace(".mp4", ".gif"), writer="pillow", fps=fps, dpi=100)
-    else:
-        anim.save(filename, writer="pillow", fps=fps, dpi=100)
-    plt.close(fig)
-    print(f"Saved animation for L={L}: {filename}")
-
-
-
-
-
 
 ################################
 """ Start MAM """
@@ -170,7 +45,7 @@ aa = 2.   #noise amplitude
 
 
 upward = False # choose if path from -1 to +1 (upward), or the opposite
-previous_data = False
+previous_data = True
 reverse = False
 threshold = 1000
 
@@ -183,7 +58,7 @@ dtau = 0.5
 
 iterations = 40000
 plotStep   = 200
-resume_file = "checkpoints/checkpoint19.npz"
+resume_file = "checkpoints/checkpoint_local.npz"
 r = dtau/dnu
 print('conditions: Ly,Lx,Ncopy =', Ly,Lx,Ncopy, 'h =', h, 'D =', D, 'kappa =', kappa, 'dtau =', dtau, 'iterations =', iterations, 'Tmax =', Tmax)
 
@@ -310,9 +185,10 @@ V2_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 reaction_U = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 reaction_V = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 
+reaction_U_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
+reaction_V_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 
-
-
+######  Boundary conditions
 if(upward==True):
 	rho1 = solRho[0] * np.ones((Ly,Lx), dtype=complex)
 	rho1k = np.fft.fft2(rho1)
@@ -324,37 +200,42 @@ else:
 	rho2 = solRho[0] * np.ones((Ly,Lx), dtype=complex)
 	rho2k = np.fft.fft2(rho2)
 
+extract_ratio = 1.0
 
-reaction_U_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
-reaction_V_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
-
-
-######  INITIAL CONDITIONS 
+######  Initial guess
 if previous_data == True:
-	if os.path.exists('checkpoints/checkpoint19.npz'):
-		data = np.load('checkpoints/checkpoint19.npz')
+	if os.path.exists('checkpoints/checkpoint24.npz'):
+		data = np.load('checkpoints/checkpoint24.npz')
 		rho_old = data['rho']
 		theta_old = data['theta']
 		T_old = data['Tmax']
 		Ncopy_old = data['Ncopy']
+		Ly_old = data['Ly']
+		Lx_old = data['Lx']
 
+		# extract rho and theta from 0 to 0.9*T_old
+		rho_old = rho_old[:int(extract_ratio*Ncopy_old),:,:]
+		theta_old = theta_old[:int(extract_ratio*Ncopy_old),:,:]
+		# rho_old = rho_old[int((1-extract_ratio)*Ncopy_old+1):,:,:]
+		# theta_old = theta_old[int((1-extract_ratio)*Ncopy_old+1):,:,:]
+		Ncopy_old = int(extract_ratio*Ncopy_old)
+		T_old = T_old * extract_ratio
 
-		# 2. 建立新、舊路徑的真實物理參數網格
-		s_old = np.linspace(0, T_old, Ncopy_old)
-		s_new = np.linspace(0, Tmax, Ncopy) # Tmax 是你現在設定的 30.0
-		s_map = s_new * (T_old / Tmax)
-		f_rho = interp1d(s_old, rho_old, axis=0, kind='linear')
-		f_theta = interp1d(s_old, theta_old, axis=0, kind='linear')
-
-		# 5. 一行指令，直接把整條 3D 陣列插值出來！(取代了你原本的 for j in range 迴圈)
-		rho = f_rho(s_map)
-		theta = f_theta(s_map)
+		# shift rho and theta by Ly//2
+		# rho_old = np.roll(rho_old, Ly//2, axis=1)
+		# theta_old = np.roll(theta_old, Ly//2, axis=1)
+		import scipy.ndimage as ndimage
+		zoom_factors = (Ncopy / Ncopy_old, Ly / Ly_old, Lx / Lx_old)
+		rho = ndimage.zoom(rho_old.real, zoom_factors, order=1).astype(complex)
+		theta = ndimage.zoom(theta_old.real, zoom_factors, order=1).astype(complex)
 		if reverse == True:
 			# reverse rho in time
 			rho = rho[::-1,:,:]
 			theta = theta[::-1,:,:]
 		rho[0,:,:]       = rho1
 		rho[Ncopy-1,:,:] = rho2
+		print("rho shape", rho.shape)
+		print("theta shape", theta.shape)
 else:
 	# deterministically set the initial condition
 	amp = 0.8
@@ -395,27 +276,7 @@ else:
 			# profile = 0.5 * (solRho[2] - solRho[0]) * np.tanh((dist - current_radius) / w) + 0.5 * (solRho[2] + solRho[0])
 			# rho[j, :, :] = profile + 0j
 			# bump = amp * np.square(np.sin(PI * Y / Ly)) * np.power(np.sin(PI * tt), 2)
-			rho[j, :, :] = linear# + bump
-### PLOT rho
-fig = plt.figure(figsize=(10,10),constrained_layout=True)
-rho_1d = rho.reshape(Ncopy, -1)
-rho_map = rho_1d.real.T  # Shape: (Ly*Lx, Ncopy)
-t_edges = np.linspace(0, Tmax, Ncopy + 1)
-n_space = rho_1d.shape[1]  # Ly*Lx
-x_edges = np.arange(n_space + 1) - 0.5
-
-im = plt.pcolormesh(t_edges, x_edges, rho_map, 
-					cmap='coolwarm', 
-					shading='flat',
-					vmin=-1.5, vmax=1.5)
-cbar = plt.colorbar(im, shrink=0.8)
-cbar.set_label(r'$\rho$', fontsize=20)
-plt.tick_params(axis='both', which='major', labelsize=15)
-plt.yticks([0, n_space-1])
-plt.xlabel('Time', fontsize=20)
-plt.ylabel('Space index (0 to L-1)', fontsize=20)
-plt.savefig('rho_initial.png')
-
+			rho[j, :, :] = linear #+ bump
 U = rho + theta
 V = rho - theta
 
@@ -475,11 +336,6 @@ for i in range(start_iter, iterations+1):
 	# 4. 對每個空間 mode 解 A @ U_new = RHS (path-time)
 	N_space = Ly * Lx
 	RHS_flat = RHS_U_Fourier.reshape(Ncopy, -1)
-	# U_new_flat = np.zeros_like(RHS_flat)
-	# for col in range(N_space):
-	# 	U_new_flat[:, col] = solve_triangular(A_solve_upper_adapted, RHS_flat[:, col])
-	# U2_Fourier[:] = U_new_flat.reshape(Ncopy, Ly, Lx)
-
 	U_Fourier_flat = U_Fourier.reshape(Ncopy, -1)
 	U_new_flat = np.zeros_like(RHS_flat)
 	for col in range(N_space):
@@ -513,11 +369,6 @@ for i in range(start_iter, iterations+1):
 	RHS_V_Fourier = V_Fourier + dtau * reaction_V_Fourier
 	RHS_V_Fourier[0, :, :] = -U_Fourier[0, :, :] + 2.0 * rho1k
 
-	# RHS_V_flat = RHS_V_Fourier.reshape(Ncopy, -1)
-	# V_new_flat = np.zeros_like(RHS_V_flat)
-	# for col in range(N_space):
-	# 	V_new_flat[:, col] = solve_triangular(B_solve_lower_adapted, RHS_V_flat[:, col], lower=True)
-	# V2_Fourier[:] = V_new_flat.reshape(Ncopy, Ly, Lx)
 	RHS_V_flat = RHS_V_Fourier.reshape(Ncopy, -1)
 	V_Fourier_flat = V_Fourier.reshape(Ncopy, -1)
 	V_new_flat = np.zeros_like(RHS_V_flat)
@@ -584,24 +435,6 @@ for i in range(start_iter, iterations+1):
 		actionS = dnu* np.sum(Lag)*h*aa
 		
 		fig.suptitle(r'$N_t=$'+str(int(Ncopy))+r', $L=$'+str(Ly)+r', $\Delta \tau=$'+str("%.1e"%dtau)+r', $D=$'+str("%.1e"%D) +r', $T_\mathrm{max}=$'+str("%.1f"%Tmax)+"\n"+"$\kappa =$"+str(kappa)+", $S=$"+str("%.6f"%(actionS))+', Time '+ str(i*dtau), fontsize=20)
-		
-		### VECTOR FIELD
-		# Saction = dnu* np.sum(Lagrangian(h, dnu, rho, theta).real)
-		# ax0.scatter(rho[:,0].real, rho[:,1].real, color='darkblue', s=2.2, zorder=15)
-		# x = np.arange(solRho[0], solRho[2], 0.02)
-		# y = np.arange(solRho[0], solRho[2], 0.02)
-
-		# X, Y = np.meshgrid(x, y)
-		# u = D*(2*Y-2*X)/h**2  + (X - X*X*X) + kappa*(X*X+Y*Y)/2.
-		# v = D*(2*X-2*Y)/h**2  + (Y - Y*Y*Y) + kappa*(X*X+Y*Y)/2.
-
-		# ax0.streamplot(x, y, u, v, density=1, color='grey')
-		# ax0.set_xlabel(r'$\rho_1$', fontsize=20)
-		# ax0.set_ylabel(r'$\rho_2$', fontsize=20)
-		# ax0.set_xlim(solRho[0],solRho[2])
-		# ax0.set_ylim(solRho[0],solRho[2])
-		# ax0.tick_params(axis='both', which='major', labelsize=15)
-		# ax0.set_aspect('equal')
 		### [NEW] PLOT: Symmetry Breaking Projection (Mean vs Std)
 		mean_rho = np.mean(rho_1d.real, axis=1) 
 		std_rho  = np.std(rho_1d.real, axis=1)  	
@@ -673,7 +506,7 @@ for i in range(start_iter, iterations+1):
 			print(f"Time taken: {end_time - start_time} seconds", "iteration", i)
 		plt.clf()
 		plt.close()
-		np.savez_compressed('checkpoints/checkpoint.npz', rho=rho, theta=theta, iteration=i, Lx=Lx, Ly=Ly, h=h, Ncopy=Ncopy, Tmax=Tmax, aa=aa, D=D, kappa=kappa, dtau=dtau, upward=upward, iterations=i, plotStep=plotStep)
+		np.savez_compressed('checkpoints/checkpoint_local.npz', rho=rho, theta=theta, iteration=i, Lx=Lx, Ly=Ly, h=h, Ncopy=Ncopy, Tmax=Tmax, aa=aa, D=D, kappa=kappa, dtau=dtau, upward=upward, iterations=i, plotStep=plotStep)
 # Animate for any L
 animate_any_boxes(rho_1d.real, theta_1d.real, filename=f"boxes_L{int(Ly)}.mp4", dnu=dnu, skip=4, fps=25)
 

@@ -204,30 +204,7 @@ def animate_any_boxes(rho, theta, filename="boxes_evolution.mp4", dnu=None, skip
 """ Start MAM """
 ##############################
 
-# Lx = 1
-# Ly = 50
-# h  = 1
-# Ncopy = 1600 
-# Tmax = 40.
-
-
-# s = np.linspace(0,Tmax,Ncopy)
-# ds  = s[1]-s[0]
-# dnu = s[1]-s[0]
-# aa = 2.   #noise amplitude
-
-
-# upward = False # choose if path from -1 to +1 (upward), or the opposite
-
-# D     = 5
-
-
-
-# dtau = 0.5
-
-# r = dtau/dnu
-
-resume_file = "checkpoints/checkpoint_b_2d_3.npz"
+resume_file = "checkpoints/modelB/checkpoint_local.npz"
 if os.path.exists(resume_file):
 	data = np.load(resume_file)
 	rho = data['rho']
@@ -272,107 +249,115 @@ V = rho - theta
 plt.gcf()
 rho_1d = rho.reshape(Ncopy, -1)
 theta_1d = theta.reshape(Ncopy, -1)
-fig = plt.figure(figsize=(10,10),layout='constrained')
+fig = plt.figure(figsize=(15,10),layout='constrained')
 # 4 subplots: 1. rho, 2. theta, 3. Lagrangian, 4. Hamiltonian 2 rows 2 columns
-ax0 = fig.add_subplot(322)
-ax1 = fig.add_subplot(321)
-ax2 = fig.add_subplot(323)
-ax3 = fig.add_subplot(324)
-ax4 = fig.add_subplot(325)
-ax5 = fig.add_subplot(326)
+ax0 = fig.add_subplot(233)
+ax1 = fig.add_subplot(231)
+theta_of_ax1 = fig.add_subplot(232)
+ax3 = fig.add_subplot(235)
+theta_of_ax3 = fig.add_subplot(236)
+largest_Lag_ax = fig.add_subplot(234)
+Lag = Lagrangian(h, dnu, rho_1d, theta_1d).real
+actionS = dnu* np.sum(Lag)*h**2*aa
+largest_Lag_time_index = np.argmax(Lag[2:-10]*h**2*aa)+2
+fig.suptitle(r'$N_t=$'+str(int(Ncopy))+r', $L_x\times L_y=$'+str(int(Ly*h))+r'$\times$'+str(int(Lx*h))+r', h='+str(h)+r', $\Delta \tau=$'+str(dtau)+r', $D=$'+str(D) +r', $T_\mathrm{max}=$'+str("%.1f"%Tmax)+"\n"+"$S=$"+str("%.6f"%(actionS))+r', $\tau=$ '+ str(end_iterations*dtau), fontsize=20)
+
+### PLOT rho
+mid_y = Ly // 2
+rho_slice = rho[:, mid_y, :].real
+t_edges = np.linspace(0, Tmax, Ncopy + 1)
+x_edges = np.arange(Lx + 1) - 0.5 # 現在 Y 軸是 X 空間座標
+im = ax1.pcolormesh(x_edges, t_edges, rho_slice, 
+                    cmap='coolwarm', 
+                    shading='flat',
+                    vmin=-1.5, vmax=1.5)
+cbar = fig.colorbar(im, ax=ax1, shrink=0.8)
+cbar.set_label(r'$\rho(x, y_{mid}, t)$', fontsize=20)
+ax1.plot([0,Lx-1], [t_edges[largest_Lag_time_index], t_edges[largest_Lag_time_index]], linewidth=2, color='red')
+ax1.tick_params(axis='both', which='major', labelsize=15)
+ax1.set_xticks([0, Lx-1])
+ax1.set_ylabel('Time', fontsize=20)
+ax1.set_xlabel(f'X Coordinate (at y={mid_y})', fontsize=15)
 Lag = Lagrangian(h, dnu, rho_1d, theta_1d).real
 actionS = dnu* np.sum(Lag)*h**2*aa
 
-fig.suptitle(r'$N_\mathrm{copy}=$'+str(int(Ncopy))+r', box size $=('+str(Ly)+r'\times'+str(Lx)+r')$, h ='+str(h)+r', $\Delta \tau=$'+str(dtau)+r', $D=$'+str(D) +r', $T_\mathrm{max}=$'+str(Tmax)+"\n"+', Time '+ str(end_iterations*dtau), fontsize=20)
+### PLOT theta
+theta_slice = theta[:, mid_y, :].real
+min_theta = theta_slice.min()
+max_theta = theta_slice.max()
+im2 = theta_of_ax1.pcolormesh(x_edges, t_edges , theta_slice, 
+                    cmap='bwr', 
+                    shading='flat',
+                    vmin=-0.05, vmax=0.05)
+cbar2 = fig.colorbar(im2, ax=theta_of_ax1, shrink=0.8)
+cbar2.set_label(r'$\theta(x, y_{mid}, t)$', fontsize=20)
+theta_of_ax1.plot([0,Lx-1], [t_edges[largest_Lag_time_index], t_edges[largest_Lag_time_index]], linewidth=2, color='red')
+theta_of_ax1.tick_params(axis='both', which='major', labelsize=15)
+theta_of_ax1.set_xticks([0, Lx-1])
+theta_of_ax1.set_ylabel('Time', fontsize=20)
+theta_of_ax1.set_xlabel(f'X Coordinate (at y={mid_y})', fontsize=15)
 
-### [NEW] PLOT: Symmetry Breaking Projection (Mean vs Std)
-mean_rho = np.mean(rho_1d.real, axis=1) 
-std_rho  = np.std(rho_1d.real, axis=1)  	
+### PLOT Lagrangian and Hamiltonian
+ax0.set_aspect('auto')
+ax0.plot(np.linspace(0,1,Ncopy), Lag*h**2*aa, label=r'$L(\rho,\dot\rho)$', color='black'  ) 
+ax0.plot(np.linspace(0,1,Ncopy), Hamiltonian(h,rho_1d, theta_1d).real*h**2*aa, label=r'$H(\rho,\theta)$', color='brown' , linestyle='-.') 
+ax0.plot([t_edges[largest_Lag_time_index]/Tmax, t_edges[largest_Lag_time_index]/Tmax], [-1, 1], linewidth=2, color='red')
+ax0.legend(loc='best', fontsize=14)
+ax0.tick_params(axis='both', which='major', labelsize=15)
+ax0.set_xlabel(r'$t/T_\mathrm{Max}$', fontsize=20)
+ax0.set_ylabel(r'$L$', fontsize=20)
+ax0.set_xlim(0,1)
+ax0.set_ylim(-0.05*max(Lag[2:-10].max()*h**2*aa, Hamiltonian(h,rho_1d, theta_1d).real[2:-10].max()*h**2*aa), max(Lag[2:-10].max()*h**2*aa, Hamiltonian(h,rho_1d, theta_1d).real[2:-10].max()*h**2*aa)*1.2)
 
-im = ax0.scatter(std_rho, mean_rho, c=np.linspace(0,1,Ncopy), cmap='viridis', s=15, zorder=10) 
-ax0.plot(std_rho, mean_rho, color='darkblue', linewidth=2, label='Instanton Path')
-ax0.axvline(0, color='gray', linestyle='--', alpha=0.5, label='Homogeneous (Symmetric)')
-
-ax0.set_xlabel(r'Inhomogeneity $\sigma_\rho$ (Std Dev)', fontsize=15)
-ax0.set_ylabel(r'Mean Density $\bar{\rho}$', fontsize=15)
-ax0.set_title(r'Symmetry Breaking Projection', fontsize=16)
-
-ax0.grid(True, linestyle=':', alpha=0.6)
-ax0.set_xlim(left=-0.05, right=max(std_rho.max()*1.2, 0.5)) 
-ax0.set_ylim(solRho[0]-0.2, solRho[2]+0.2)
-ax0.legend(loc='best', fontsize=12)
-## colorbar
-cbar = fig.colorbar(im, ax=ax0, shrink=0.8)
-cbar.set_label(r'Time', fontsize=20)
-
-### PLOT rho
+# Plot rho
 mid_x = Lx // 2
 rho_slice = rho[:, :, mid_x].real.T
 t_edges = np.linspace(0, Tmax, Ncopy + 1)
 y_edges = np.arange(Ly + 1) - 0.5 # 現在 Y 軸是 X 空間座標
-im = ax1.pcolormesh(t_edges, y_edges, rho_slice, 
-                    cmap='bwr', 
+im = ax3.pcolormesh(t_edges, y_edges, rho_slice, 
+                    cmap='coolwarm', 
                     shading='flat',
                     vmin=-1.5, vmax=1.5)
-cbar = fig.colorbar(im, ax=ax1, shrink=0.8)
+cbar = fig.colorbar(im, ax=ax3, shrink=0.8)
 cbar.set_label(r'$\rho(x_{mid}, y, t)$', fontsize=20)
-ax1.tick_params(axis='both', which='major', labelsize=15)
-ax1.set_yticks([0, Ly-1])
-ax1.set_xlabel('Time', fontsize=20)
-ax1.set_ylabel(f'Y Coordinate (at x={mid_x})', fontsize=15)
+ax3.plot([t_edges[largest_Lag_time_index], t_edges[largest_Lag_time_index]], [0, Ly-1], linewidth=2, color='red')
+ax3.tick_params(axis='both', which='major', labelsize=15)
+ax3.set_yticks([0, Ly-1])
+ax3.set_xlabel('Time', fontsize=20)
+ax3.set_ylabel(f'Y Coordinate (at x={mid_x})', fontsize=15)
 Lag = Lagrangian(h, dnu, rho_1d, theta_1d).real
 actionS = dnu* np.sum(Lag)*h**2*aa
 
 ### PLOT theta
 theta_slice = theta[:, :, mid_x].real.T
-theta_max = np.abs(theta_slice).max()
-theta_min = theta_slice.min()
-im2 = ax2.pcolormesh(t_edges, y_edges, theta_slice, 
+min_theta = theta_slice.min()
+max_theta = theta_slice.max()
+im2 = theta_of_ax3.pcolormesh(t_edges, y_edges, theta_slice, 
                     cmap='bwr', 
                     shading='flat',
-                    vmin=theta_min, vmax=theta_max)
-cbar2 = fig.colorbar(im2, ax=ax2, shrink=0.8)
+                    vmin=-0.05, vmax=0.05)
+cbar2 = fig.colorbar(im2, ax=theta_of_ax3, shrink=0.8)
 cbar2.set_label(r'$\theta(x_{mid}, y, t)$', fontsize=20)
-ax2.tick_params(axis='both', which='major', labelsize=15)
-ax2.set_yticks([0, Ly-1])
-ax2.set_xlabel('Time', fontsize=20)
-ax2.set_ylabel(f'Y Coordinate (at x={mid_x})', fontsize=15)
+theta_of_ax3.plot([t_edges[largest_Lag_time_index], t_edges[largest_Lag_time_index]], [0, Ly-1], linewidth=2, color='red')
+theta_of_ax3.tick_params(axis='both', which='major', labelsize=15)
+theta_of_ax3.set_yticks([0, Ly-1])
+theta_of_ax3.set_xlabel('Time', fontsize=20)
+theta_of_ax3.set_ylabel(f'Y Coordinate (at x={mid_x})', fontsize=15)
 
-### PLOT theta
-theta_slice = theta[:, :, Lx//4].real.T
-im2 = ax4.pcolormesh(t_edges, y_edges, theta_slice, 
-                    cmap='bwr', 
+# find the time index of the largest Lag
+rho_slice = rho[largest_Lag_time_index, :, :].real
+im = largest_Lag_ax.pcolormesh(x_edges, y_edges, rho_slice, 
+                    cmap='coolwarm', 
                     shading='flat',
-                    vmin=theta_min, vmax=theta_max)
-cbar2 = fig.colorbar(im2, ax=ax4, shrink=0.8)
-cbar2.set_label(r'$\theta(x_{mid}, y, t)$', fontsize=20)
-ax4.tick_params(axis='both', which='major', labelsize=15)
-ax4.set_yticks([0, Ly-1])
-ax4.set_xlabel('Time', fontsize=20)
-ax4.set_ylabel(f'Y Coordinate (at x={Lx//4})', fontsize=15)
-
-### PLOT theta
-theta_slice = theta[:, :, 3*Lx//4].real.T
-im2 = ax5.pcolormesh(t_edges, y_edges, theta_slice, 
-                    cmap='bwr', 
-                    shading='flat',
-                    vmin=theta_min, vmax=theta_max)
-cbar2 = fig.colorbar(im2, ax=ax5, shrink=0.8)
-cbar2.set_label(r'$\theta(x_{mid}, y, t)$', fontsize=20)
-ax5.tick_params(axis='both', which='major', labelsize=15)
-ax5.set_yticks([0, Ly-1])
-ax5.set_xlabel('Time', fontsize=20)
-ax5.set_ylabel(f'Y Coordinate (at x={3*Lx//4})', fontsize=15)
-
-### PLOT Lagrangian and Hamiltonian
-ax3.set_aspect('auto')
-ax3.plot(np.linspace(0,1,Ncopy), Lag*h**2*aa, label=r'$L(\rho,\dot\rho)$'+r', $S=$'+str("%.6f"%(actionS)), color='black'  ) 
-ax3.plot(np.linspace(0,1,Ncopy), Hamiltonian(h,rho_1d, theta_1d).real*h**2*aa, label=r'$H(\rho,\theta)$', color='brown' ) 
-plt.legend(loc='best', fontsize=14)
-ax3.tick_params(axis='both', which='major', labelsize=15)
-ax3.set_xlabel(r'$t/T_\mathrm{Max}$', fontsize=20)
-ax3.set_ylabel(r'$L$', fontsize=20)
-ax3.set_xlim(0,1)
+                    vmin=-1.5, vmax=1.5)
+largest_Lag_ax.plot([0,Lx-1], [Ly//2, Ly//2], linewidth=2, color='red')
+largest_Lag_ax.plot([Lx//2, Lx//2], [0, Ly-1], linewidth=2, color='red')
+cbar = fig.colorbar(im, ax=largest_Lag_ax, shrink=0.8)
+cbar.set_label(r'$\rho(x, y, t)$', fontsize=20)
+largest_Lag_ax.tick_params(axis='both', which='major', labelsize=15)
+largest_Lag_ax.set_xlabel('X Coordinate', fontsize=20)
+largest_Lag_ax.set_ylabel('Y Coordinate', fontsize=20)
+largest_Lag_ax.set_title(r'$\rho$ at largest L', fontsize=20)
 
 if(upward==True):
 	plt.savefig('upward_L'+str(int(Ly))+'_N'+str(int(Ncopy))+'h'+str(float(h))+'_D'+str(D)+'_dtau'+str("%.1e"%dtau)+'_'+"%09d" % (end_iterations,)+'.png', format='png', bbox_inches='tight')

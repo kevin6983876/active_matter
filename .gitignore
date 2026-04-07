@@ -8,3 +8,21 @@ checkpoints/
 *.gif
 
 *.png
+
+*.pdf
+
+*.tex
+
+*.ipynb
+
+*.aux
+
+*.log
+
+*.out
+
+*.snm
+
+*.toc
+
+*.nav

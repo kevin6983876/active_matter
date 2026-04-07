@@ -1,42 +1,17 @@
-from numpy import loadtxt
-from matplotlib import cm
 import math
-import cmath
 import time
 import os
-
 import numpy as np
-
-import matplotlib.pyplot as plt
-from matplotlib import rc
-
-from itertools import count
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from scipy import sparse
 from scipy.sparse.linalg import factorized
-from scipy.linalg import solve_triangular, solve_banded
-from scipy.interpolate import interp1d
-#rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
-## for Palatino and other serif fonts use:
-#rc('font',**{'family':'serif','serif':['Palatino']})
-#rc('text', usetex=True)
-
-
-
-import time
+from scipy.linalg import solve_banded
 start_time = time.time()
-
 PI = math.pi
-
 ##############################
 """ DEFINE FUNCTIONS """
 ###############################
-
-from scipy.linalg import solve_triangular
-#x = solve_triangular(a, b, lower=True)
-
-
 def Hamiltonian(h, rho, theta): 
     rho_3d = rho.reshape(Ncopy, Ly, Lx)
     theta_3d = theta.reshape(Ncopy, Ly, Lx)
@@ -56,104 +31,15 @@ def Lagrangian(h, ds, rho, theta): #return an array of size Ncopy, axis=1 sums t
 	L =  np.sum( rhoDot * theta, axis=1 ) - Ham
 	return L
 
-
-def animate_any_boxes(rho, theta, filename="boxes_evolution.mp4", dnu=None, skip=1, fps=30):
-    """
-    Generic Live bar chart animation for any L (L=2, 3, ...).
-    """
-    rho = np.asarray(rho).real
-    theta = np.asarray(theta).real
-    Nt, L = rho.shape  # 自動偵測 L
-    
-    if dnu is None:
-        dnu = 1.0 / max(Nt - 1, 1)
-
-    # Downsample
-    indices = np.arange(0, Nt, skip)
-    if len(indices) > 200:
-        indices = np.linspace(0, Nt - 1, 150, dtype=int)
-    rho_sub = rho[indices]
-    theta_sub = theta[indices]
-    n_frames = len(indices)
-
-    # Setup Colors
-    theta_max = max(np.abs(theta).max(), 0.01)
-    norm = plt.Normalize(vmin=-theta_max, vmax=theta_max)
-    cmap = plt.cm.coolwarm
-
-    # Setup Figure
-    fig, ax = plt.subplots(figsize=(max(4, L*1.5), 5), layout='constrained') # 寬度隨 L 自動調整
-    ax.set_ylim(-1.5, 1.5)
-    ax.set_xlim(-0.8, L - 0.2)
-    ax.set_xticks(range(L))
-    ax.set_xticklabels([f"Box {i+1}" for i in range(L)]) # 自動產生 Box 1, Box 2...
-    ax.axhline(0, color="k", lw=0.5)
-    ax.set_ylabel(r"$\rho$ (density)")
-    
-    # Colorbar
-    sm = plt.cm.ScalarMappable(cmap=cmap, norm=norm)
-    sm.set_array([])
-    cbar = fig.colorbar(sm, ax=ax, shrink=0.8)
-    cbar.set_label(r"Noise Force ($\theta$)")
-
-    # Initialize Bars
-    initial_colors = [cmap(norm(theta_sub[0, i])) for i in range(L)]
-    bars = ax.bar(range(L), rho_sub[0], color=initial_colors, width=0.6, edgecolor="k")
-    
-    ann = ax.text(0.5, 1.15, "", transform=ax.transAxes, ha="center", fontsize=12, fontweight="bold")
-
-    def update(frame_idx):
-        rho_f = rho_sub[frame_idx]
-        theta_f = theta_sub[frame_idx]
-        t = indices[frame_idx] * dnu
-        
-        # Update each bar
-        for i, b in enumerate(bars):
-            b.set_height(rho_f[i])
-            b.set_color(cmap(norm(theta_f[i])))
-            
-        ax.set_title(r"Time: {:.2f} | Action Density".format(t))
-        
-        # Generalized Symmetry Breaking Detection
-        # 計算標準差，如果 > 0.1 代表有盒子長得不一樣
-        std_dev = np.std(rho_f)
-        if std_dev > 0.1:
-            ann.set_text(f"Symmetry Breaking (std={std_dev:.2f})")
-            ann.set_color("red")
-        else:
-            ann.set_text("Homogeneous")
-            ann.set_color("black")
-            
-        return list(bars) + [ann]
-
-    anim = FuncAnimation(fig, update, frames=n_frames, blit=False, interval=1000.0 / fps)
-    
-    # Save logic (same as before)
-    ext = filename.rsplit(".", 1)[-1].lower()
-    if ext == "mp4":
-        try:
-            anim.save(filename, writer="ffmpeg", fps=fps, dpi=100)
-        except Exception:
-            anim.save(filename.replace(".mp4", ".gif"), writer="pillow", fps=fps, dpi=100)
-    else:
-        anim.save(filename, writer="pillow", fps=fps, dpi=100)
-    plt.close(fig)
-    print(f"Saved animation for L={L}: {filename}")
-
-
-
-
-
-
 ################################
 """ Start MAM """
 ##############################
 
-Lx = 50
-Ly = 50
-h  = 0.5
+Lx = 25
+Ly = 25
+h  = 1.0
 Ncopy = 2000 
-Tmax = 20.
+Tmax = 50.
 
 
 s = np.linspace(0,Tmax,Ncopy)
@@ -162,7 +48,10 @@ dnu = s[1]-s[0]
 aa = 2.   #noise amplitude
 
 
-upward = True # choose if path from -1 to +1 (upward), or the opposite
+upward = False # choose if path from -1 to +1 (upward), or the opposite
+previous_data = False
+reverse = False
+threshold = 1000
 
 D     = 5
 kappa = 0.26
@@ -173,16 +62,7 @@ dtau = 0.5
 
 iterations = 9000
 plotStep   = 10
-resume_file = "checkpoints/checkpoint_2d_7.npz"
-######  INITIAL CONDITIONS 
-if os.path.exists('checkpoints/checkpoint_2d_1.npz'):
-	data = np.load('checkpoints/checkpoint_2d_1.npz')
-	rho_old = data['rho']
-	theta_old = data['theta']
-	T_old = data['Tmax']
-	Ncopy_old = data['Ncopy']
-	Lx_old = data['Lx']
-	Ly_old = data['Ly']
+resume_file = "checkpoints/GL2D/checkpoint_local.npz"
 r = dtau/dnu
 print('conditions: Ly,Lx,Ncopy =', Ly,Lx,Ncopy, 'h =', h, 'D =', D, 'kappa =', kappa, 'dtau =', dtau, 'iterations =', iterations, 'Tmax =', Tmax)
 
@@ -309,9 +189,10 @@ V2_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 reaction_U = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 reaction_V = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 
+reaction_U_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
+reaction_V_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 
-
-
+######  Boundary conditions
 if(upward==True):
 	rho1 = solRho[0] * np.ones((Ly,Lx), dtype=complex)
 	rho1k = np.fft.fft2(rho1)
@@ -324,99 +205,83 @@ else:
 	rho2k = np.fft.fft2(rho2)
 
 
-reaction_U_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
-reaction_V_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
+extract_ratio = 1.0
 
+######  Initial guess
+if previous_data == True:
+	if os.path.exists('checkpoints/GL2D/checkpoint_2d_3.npz'):
+		data = np.load('checkpoints/GL2D/checkpoint_2d_3.npz')
+		rho_old = data['rho']
+		theta_old = data['theta']
+		T_old = data['Tmax']
+		Ncopy_old = data['Ncopy']
+		Lx_old = data['Lx']
+		Ly_old = data['Ly']
 
+		# extract rho and theta from 0 to 0.9*T_old
+		rho_old = rho_old[:int(extract_ratio*Ncopy_old),:,:]
+		theta_old = theta_old[:int(extract_ratio*Ncopy_old),:,:]
+		# rho_old = rho_old[int((1-extract_ratio)*Ncopy_old+1):,:,:]
+		# theta_old = theta_old[int((1-extract_ratio)*Ncopy_old+1):,:,:]
+		Ncopy_old = int(extract_ratio*Ncopy_old)
+		T_old = T_old * extract_ratio
 
-import scipy.ndimage as ndimage
+		# shift rho and theta by Ly//2
+		# rho_old = np.roll(rho_old, Ly//2, axis=1)
+		# theta_old = np.roll(theta_old, Ly//2, axis=1)
+		import scipy.ndimage as ndimage
+		zoom_factors = (Ncopy / Ncopy_old, Ly / Ly_old, Lx / Lx_old)
+		rho = ndimage.zoom(rho_old.real, zoom_factors, order=1).astype(complex)
+		theta = ndimage.zoom(theta_old.real, zoom_factors, order=1).astype(complex)
+		if reverse == True:
+			# reverse rho in time
+			rho = rho[::-1,:,:]
+			theta = theta[::-1,:,:]
+		rho[0,:,:]       = rho1
+		rho[Ncopy-1,:,:] = rho2
+		print("rho shape", rho.shape)
+		print("theta shape", theta.shape)
+else:
+	# deterministically set the initial condition
+	amp = 0.8
+	y_coords = np.arange(Ly)
+	x_coords = np.arange(Lx)
+	Y, X = np.meshgrid(y_coords, x_coords, indexing='ij')
 
+	# randomly set the initial condition
+	noise_amp = 0.5  # noise amplitude
+	np.random.seed(42 if Lx == 1 else None)
 
-zoom_factors = (Ncopy / Ncopy_old, Ly / Ly_old, Lx / Lx_old)
-
-
-rho = ndimage.zoom(rho_old.real, zoom_factors, order=1).astype(complex)
-theta = ndimage.zoom(theta_old.real, zoom_factors, order=1).astype(complex)
-
-rho[0, :, :] = rho1
-rho[-1, :, :] = rho2
-
-# 5. 同步更新 U 和 V
-# U = rho + theta
-# V = rho - theta
-# # 2. 建立新、舊路徑的真實物理參數網格
-# s_old = np.linspace(0, T_old, Ncopy_old)
-# s_new = np.linspace(0, Tmax, Ncopy) # Tmax 是你現在設定的 30.0
-# s_map = s_new * (T_old / Tmax)
-# f_rho = interp1d(s_old, rho_old, axis=0, kind='linear')
-# f_theta = interp1d(s_old, theta_old, axis=0, kind='linear')
-
-# # 5. 一行指令，直接把整條 3D 陣列插值出來！(取代了你原本的 for j in range 迴圈)
-# rho = f_rho(s_map)
-# theta = f_theta(s_map)
-# # # reverse rho in time
-# # rho = rho[::-1,:,:]
-# # theta = theta[::-1,:,:]
-# rho[0,:,:]       = rho1
-# rho[Ncopy-1,:,:] = rho2
-# # deterministically set the initial condition
-# amp = 0.4
-# y_coords = np.arange(Ly)
-# x_coords = np.arange(Lx)
-# Y, X = np.meshgrid(y_coords, x_coords, indexing='ij')
-
-# # randomly set the initial condition
-# noise_amp = 0.5  # noise amplitude
-# np.random.seed(42 if Lx == 1 else None)
-
-# max_radius = np.sqrt((Ly/2)**2 + (Lx/2)**2) 
-# if upward == True:
-# 	for j in range(1,Ncopy-1):
-# 		tt = float(j)/Ncopy
-# 		linear = rho1*(1-tt) + tt*rho2
-# 		# bubble growth in 2D chain (smooth initial condition)
-# 		current_radius = tt * max_radius
-# 		dist = np.sqrt((Y - Ly/2)**2 + (X - Lx/2)**2)
-# 		w = np.sqrt(D) / h  
-# 		if w < 1.0: w = 1.0 
-# 		profile = 0.5 * (solRho[0] - solRho[2]) * np.tanh((dist - current_radius) / w) + 0.5 * (solRho[0] + solRho[2])
-# 		rho[j, :, :] = profile + 0j
-# 		# deterministic initial condition
-# 		# bump = amp * np.square(np.sin(PI * Y / Ly)) * np.power(np.sin(PI * tt), 2)
-# 		# random initial condition
-# 		# bump = noise_amp*np.random.normal(0, 1, size=(Ly,Lx))*np.sin(PI*tt)
-# 		# rho[j,:,:] = linear + bump
-# else: # downward
-# 	for j in range(1,Ncopy-1):
-# 		tt = float(j)/Ncopy
-# 		linear = rho1*(1-tt) + tt*rho2
-# 		# bubble growth in 1D chain (smooth initial condition)
-# 		# current_radius = tt * max_radius
-# 		# dist = np.sqrt((Y - Ly/2)**2 + (X - Lx/2)**2)
-# 		# w = np.sqrt(D) / h  
-# 		# if w < 1.0: w = 1.0 
-# 		# profile = 0.5 * (solRho[2] - solRho[0]) * np.tanh((dist - current_radius) / w) + 0.5 * (solRho[2] + solRho[0])
-# 		# rho[j, :, :] = profile + 0j
-# 		rho[j, :, :] = linear + 0j
-### PLOT rho
-fig = plt.figure(figsize=(15,5),layout='constrained')
-ax0 = fig.add_subplot(131)
-ax1 = fig.add_subplot(132)
-ax2 = fig.add_subplot(133)
-rho_2d_initial = rho[1,:,:].real
-rho_2d_middle = rho[Ncopy//2,:,:].real
-rho_2d_final = rho[Ncopy-2,:,:].real
-im0 = ax0.imshow(rho_2d_initial, cmap='coolwarm', vmin=-1.5, vmax=1.5)
-im1 = ax1.imshow(rho_2d_middle, cmap='coolwarm', vmin=-1.5, vmax=1.5)
-im2 = ax2.imshow(rho_2d_final, cmap='coolwarm', vmin=-1.5, vmax=1.5)
-# add colorbar
-cbar = fig.colorbar(im2, ax=ax2, shrink=0.8)
-cbar.set_label(r'$\rho$', fontsize=20)
-ax0.set_title('Initial')
-ax1.set_title('Middle')
-ax2.set_title('Final')
-plt.savefig('rho_2d.png',dpi=300,bbox_inches='tight')
-
+	max_radius = np.sqrt((Ly/2)**2 + (Lx/2)**2) 
+	if upward == True:
+		for j in range(1,Ncopy-1):
+			tt = float(j)/Ncopy
+			linear = rho1*(1-tt) + tt*rho2
+			# bubble growth in 2D chain (smooth initial condition)
+			current_radius = tt * max_radius
+			dist = np.sqrt((Y - Ly/2)**2 + (X - Lx/2)**2)
+			w = np.sqrt(D) / h  
+			if w < 1.0: w = 1.0 
+			profile = 0.5 * (solRho[0] - solRho[2]) * np.tanh((dist - current_radius) / w) + 0.5 * (solRho[0] + solRho[2])
+			rho[j, :, :] = profile + 0j
+			# deterministic initial condition
+			# bump = amp * np.square(np.sin(PI * Y / Ly)) * np.power(np.sin(PI * tt), 2)
+			# random initial condition
+			# bump = noise_amp*np.random.normal(0, 1, size=(Ly,Lx))*np.sin(PI*tt)
+			# rho[j,:,:] = linear + bump
+	else: # downward
+		for j in range(1,Ncopy-1):
+			tt = float(j)/Ncopy
+			linear = rho1*(1-tt) + tt*rho2
+			# bubble growth in 1D chain (smooth initial condition)
+			# current_radius = tt * max_radius
+			# dist = np.sqrt((Y - Ly/2)**2 + (X - Lx/2)**2)
+			# w = np.sqrt(D) / h  
+			# if w < 1.0: w = 1.0 
+			# profile = 0.5 * (solRho[2] - solRho[0]) * np.tanh((dist - current_radius) / w) + 0.5 * (solRho[2] + solRho[0])
+			# rho[j, :, :] = profile + 0j
+			# bump = amp * np.square(np.sin(PI * Y / Ly)) * np.power(np.sin(PI * tt), 2)
+			rho[j, :, :] = linear + 0j
 U = rho + theta
 V = rho - theta
 
@@ -437,7 +302,7 @@ if os.path.exists(resume_file):
 	dtau = data['dtau']
 	upward = data['upward']
 	end_iterations = data['iterations']
-	# plotStep = data['plotStep']
+	plotStep = data['plotStep']
 	start_iter = end_iterations + 1
 else:
 	start_iter = 0
@@ -464,7 +329,6 @@ for i in range(start_iter, iterations+1):
 	dH_drho   = D * lap_theta + theta - 3*rho**2*theta + kappa * 2 * rho * mean_theta_global
 	dH_dtheta = D * lap_rho + rho - rho**3 + kappa * mean_rho2_global + aa * theta
 	reaction_U = dH_drho - dH_dtheta
-
 	# 2. 空間 FFT2
 	U_Fourier[:] = np.fft.fft2(U, axes=(1, 2))
 	V_Fourier[:] = np.fft.fft2(V, axes=(1, 2))
@@ -477,11 +341,6 @@ for i in range(start_iter, iterations+1):
 	# 4. 對每個空間 mode 解 A @ U_new = RHS (path-time)
 	N_space = Ly * Lx
 	RHS_flat = RHS_U_Fourier.reshape(Ncopy, -1)
-	# U_new_flat = np.zeros_like(RHS_flat)
-	# for col in range(N_space):
-	# 	U_new_flat[:, col] = solve_triangular(A_solve_upper_adapted, RHS_flat[:, col])
-	# U2_Fourier[:] = U_new_flat.reshape(Ncopy, Ly, Lx)
-
 	U_Fourier_flat = U_Fourier.reshape(Ncopy, -1)
 	U_new_flat = np.zeros_like(RHS_flat)
 	for col in range(N_space):
@@ -497,7 +356,6 @@ for i in range(start_iter, iterations+1):
 	rho[Ncopy-1] = rho2
 	U = rho + theta
 	V = rho - theta
-
 	# ================= UPDATE V =================
 	lap_rho   = apply_lap_2d(rho)
 	lap_theta = apply_lap_2d(theta)
@@ -516,11 +374,6 @@ for i in range(start_iter, iterations+1):
 	RHS_V_Fourier = V_Fourier + dtau * reaction_V_Fourier
 	RHS_V_Fourier[0, :, :] = -U_Fourier[0, :, :] + 2.0 * rho1k
 
-	# RHS_V_flat = RHS_V_Fourier.reshape(Ncopy, -1)
-	# V_new_flat = np.zeros_like(RHS_V_flat)
-	# for col in range(N_space):
-	# 	V_new_flat[:, col] = solve_triangular(B_solve_lower_adapted, RHS_V_flat[:, col], lower=True)
-	# V2_Fourier[:] = V_new_flat.reshape(Ncopy, Ly, Lx)
 	RHS_V_flat = RHS_V_Fourier.reshape(Ncopy, -1)
 	V_Fourier_flat = V_Fourier.reshape(Ncopy, -1)
 	V_new_flat = np.zeros_like(RHS_V_flat)
@@ -556,7 +409,7 @@ for i in range(start_iter, iterations+1):
 			
 	# 紀錄當前狀態，留給下一步比對
 	old_rho_for_check = rho.copy()
-##################################################
+	##################################################
 	'''------------ THIRD: PLOT DATA ---------'''
 	##################################################	
 	    
@@ -576,25 +429,8 @@ for i in range(start_iter, iterations+1):
 		Lag = Lagrangian(h, dnu, rho_1d, theta_1d).real
 		actionS = dnu* np.sum(Lag)*h**2*aa
 		
-		fig.suptitle(r'$N_\mathrm{copy}=$'+str(int(Ncopy))+r', $L=$'+str(Ly)+r', $\Delta \tau=$'+str("%.1e"%dtau)+r', $D=$'+str("%.1e"%D) +r', $T_\mathrm{max}=$'+str("%.1f"%Tmax)+"\n"+"$\kappa =$"+str(kappa)+", $S=$'+str("%.6f"%(actionS))+', Time '+ str(i*dtau), fontsize=20)
+		fig.suptitle(r'$N_t=$'+str(int(Ncopy))+r', $L_x\times L_y=$'+str(int(Ly*h))+r'$\times$'+str(int(Lx*h))+r', h='+str(h)+r', $\Delta \tau=$'+str(dtau)+r', $D=$'+str(D) +r', $T_\mathrm{max}=$'+str("%.1f"%Tmax)+"\n"+"$\kappa =$"+str(kappa)+", $S=$"+str("%.6f"%(actionS))+r', $\tau=$ '+ str(i*dtau), fontsize=20)
 		
-		### VECTOR FIELD
-		# Saction = dnu* np.sum(Lagrangian(h, dnu, rho, theta).real)
-		# ax0.scatter(rho[:,0].real, rho[:,1].real, color='darkblue', s=2.2, zorder=15)
-		# x = np.arange(solRho[0], solRho[2], 0.02)
-		# y = np.arange(solRho[0], solRho[2], 0.02)
-
-		# X, Y = np.meshgrid(x, y)
-		# u = D*(2*Y-2*X)/h**2  + (X - X*X*X) + kappa*(X*X+Y*Y)/2.
-		# v = D*(2*X-2*Y)/h**2  + (Y - Y*Y*Y) + kappa*(X*X+Y*Y)/2.
-
-		# ax0.streamplot(x, y, u, v, density=1, color='grey')
-		# ax0.set_xlabel(r'$\rho_1$', fontsize=20)
-		# ax0.set_ylabel(r'$\rho_2$', fontsize=20)
-		# ax0.set_xlim(solRho[0],solRho[2])
-		# ax0.set_ylim(solRho[0],solRho[2])
-		# ax0.tick_params(axis='both', which='major', labelsize=15)
-		# ax0.set_aspect('equal')
 		### [NEW] PLOT: Symmetry Breaking Projection (Mean vs Std)
 		mean_rho = np.mean(rho_1d.real, axis=1) 
 		std_rho  = np.std(rho_1d.real, axis=1)  	
@@ -657,10 +493,10 @@ for i in range(start_iter, iterations+1):
 		ax3.set_xlim(0,1)
 		if i > start_iter:
 			Lag = Lagrangian(h, dnu, rho_1d, theta_1d).real
-			print('Lag max, min:', Lag.max(), Lag.min())
-			if Lag.max() * h**2 > 100 or Lag.min() * h**2 < -10:
+			print('Lag max, min:', Lag.max()*h**2*aa, Lag.min()*h**2*aa)
+			if Lag.max() * h**2*aa > threshold or Lag.min() * h**2*aa < -threshold:
 				print('Lag is not small, save checkpoint')
-				np.savez_compressed('checkpoints/checkpoint.npz', rho=rho, theta=theta, iteration=i, Lx=Lx, Ly=Ly, h=h, Ncopy=Ncopy, Tmax=Tmax, aa=aa, D=D, kappa=kappa, dtau=dtau, upward=upward, iterations=i, plotStep=plotStep)
+				np.savez_compressed('checkpoints/GL2D/checkpoint_local.npz', rho=rho, theta=theta, iteration=i, Lx=Lx, Ly=Ly, h=h, Ncopy=Ncopy, Tmax=Tmax, aa=aa, D=D, kappa=kappa, dtau=dtau, upward=upward, iterations=i, plotStep=plotStep)
 				break
 		if(upward==True):
 			plt.savefig('upward_L'+str(int(Ly))+'_N'+str(int(Ncopy))+'h'+str(float(h))+'_D'+str(D)+'_kappa'+str(kappa)+'_dtau'+str("%.1e"%dtau)+'_'+"%09d" % (i,)+'.png', format='png', bbox_inches='tight')
@@ -672,7 +508,7 @@ for i in range(start_iter, iterations+1):
 			print(f"Time taken: {end_time - start_time} seconds", "iteration", i)
 		plt.clf()
 		plt.close()
-		np.savez_compressed('checkpoints/checkpoint.npz', rho=rho, theta=theta, iteration=i, Lx=Lx, Ly=Ly, h=h, Ncopy=Ncopy, Tmax=Tmax, aa=aa, D=D, kappa=kappa, dtau=dtau, upward=upward, iterations=i, plotStep=plotStep)
+		np.savez_compressed('checkpoints/GL2D/checkpoint_local.npz', rho=rho, theta=theta, iteration=i, Lx=Lx, Ly=Ly, h=h, Ncopy=Ncopy, Tmax=Tmax, aa=aa, D=D, kappa=kappa, dtau=dtau, upward=upward, iterations=i, plotStep=plotStep)
 def animate_2d_heatmap(rho, filename="2d_evolution.mp4", dnu=None, skip=1, fps=30):
     """
     2D Heatmap Animation (imshow)
