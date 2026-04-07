@@ -425,7 +425,10 @@ for i in range(start_iter, iterations+1):
 		rho_1d = rho.reshape(Ncopy, -1)
 		theta_1d = theta.reshape(Ncopy, -1)
 		plt.gcf()
-		fig = plt.figure(figsize=(14,14),constrained_layout=True)
+		if os.path.exists(f'local.txt'):
+			fig = plt.figure(figsize=(10,10),layout='constrained')
+		else:
+			fig = plt.figure(figsize=(14,14),constrained_layout=True)
 		# 4 subplots: 1. rho, 2. theta, 3. Lagrangian, 4. Hamiltonian 2 rows 2 columns
 		ax0 = fig.add_subplot(222)
 		ax1 = fig.add_subplot(221)
