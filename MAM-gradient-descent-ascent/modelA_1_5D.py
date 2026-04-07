@@ -89,7 +89,7 @@ def animate_any_boxes(rho, theta, filename="boxes_evolution.mp4", dnu=None, skip
     cmap = plt.cm.coolwarm
 
     # Setup Figure
-    fig, ax = plt.subplots(figsize=(max(4, L*1.5), 5), layout='constrained') # 寬度隨 L 自動調整
+    fig, ax = plt.subplots(figsize=(max(4, L*1.5), 5), constrained_layout=True) # 寬度隨 L 自動調整
     ax.set_ylim(-1.5, 1.5)
     ax.set_xlim(-0.8, L - 0.2)
     ax.set_xticks(range(L))
@@ -172,10 +172,10 @@ aa = 2.   #noise amplitude
 upward = False # choose if path from -1 to +1 (upward), or the opposite
 previous_data = False
 reverse = False
-threshold = 100
+threshold = 1000
 
 D     = 5
-kappa = 0.26
+kappa = 0.23
 
 solRho = np.sort(np.roots([-1, kappa, 1, 0])) # rho-, rhos, rho+ 
 
@@ -183,7 +183,7 @@ dtau = 0.5
 
 iterations = 40000
 plotStep   = 200
-resume_file = "checkpoints/checkpoint14_1.npz"
+resume_file = "checkpoints/checkpoint19.npz"
 r = dtau/dnu
 print('conditions: Ly,Lx,Ncopy =', Ly,Lx,Ncopy, 'h =', h, 'D =', D, 'kappa =', kappa, 'dtau =', dtau, 'iterations =', iterations, 'Tmax =', Tmax)
 
@@ -331,8 +331,8 @@ reaction_V_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 
 ######  INITIAL CONDITIONS 
 if previous_data == True:
-	if os.path.exists('checkpoints/checkpoint14.npz'):
-		data = np.load('checkpoints/checkpoint14.npz')
+	if os.path.exists('checkpoints/checkpoint19.npz'):
+		data = np.load('checkpoints/checkpoint19.npz')
 		rho_old = data['rho']
 		theta_old = data['theta']
 		T_old = data['Tmax']
@@ -388,16 +388,16 @@ else:
 			tt = float(j)/Ncopy
 			linear = rho1*(1-tt) + tt*rho2
 			# bubble growth in 1D chain (smooth initial condition)
-			current_radius = tt * max_radius
-			dist = np.sqrt((Y - Ly/2)**2 + (X - Lx/2)**2)
-			w = np.sqrt(D) / h  
-			if w < 1.0: w = 1.0 
-			profile = 0.5 * (solRho[2] - solRho[0]) * np.tanh((dist - current_radius) / w) + 0.5 * (solRho[2] + solRho[0])
-			rho[j, :, :] = profile + 0j
+			# current_radius = tt * max_radius
+			# dist = np.sqrt((Y - Ly/2)**2 + (X - Lx/2)**2)
+			# w = np.sqrt(D) / h  
+			# if w < 1.0: w = 1.0 
+			# profile = 0.5 * (solRho[2] - solRho[0]) * np.tanh((dist - current_radius) / w) + 0.5 * (solRho[2] + solRho[0])
+			# rho[j, :, :] = profile + 0j
 			# bump = amp * np.square(np.sin(PI * Y / Ly)) * np.power(np.sin(PI * tt), 2)
-			# rho[j, :, :] = linear + bump
+			rho[j, :, :] = linear# + bump
 ### PLOT rho
-fig = plt.figure(figsize=(10,10),layout='constrained')
+fig = plt.figure(figsize=(10,10),constrained_layout=True)
 rho_1d = rho.reshape(Ncopy, -1)
 rho_map = rho_1d.real.T  # Shape: (Ly*Lx, Ncopy)
 t_edges = np.linspace(0, Tmax, Ncopy + 1)
@@ -574,7 +574,7 @@ for i in range(start_iter, iterations+1):
 		rho_1d = rho.reshape(Ncopy, -1)
 		theta_1d = theta.reshape(Ncopy, -1)
 		plt.gcf()
-		fig = plt.figure(figsize=(10,10),layout='constrained')
+		fig = plt.figure(figsize=(14,14),constrained_layout=True)
 		# 4 subplots: 1. rho, 2. theta, 3. Lagrangian, 4. Hamiltonian 2 rows 2 columns
 		ax0 = fig.add_subplot(222)
 		ax1 = fig.add_subplot(221)
