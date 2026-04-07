@@ -185,7 +185,8 @@ V2_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 reaction_U = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 reaction_V = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 
-
+reaction_U_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
+reaction_V_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 
 ######  Boundary conditions
 if(upward==True):
@@ -198,10 +199,6 @@ else:
 	rho1k = np.fft.fft2(rho1)
 	rho2 = solRho[0] * np.ones((Ly,Lx), dtype=complex)
 	rho2k = np.fft.fft2(rho2)
-
-
-reaction_U_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
-reaction_V_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 
 extract_ratio = 1.0
 

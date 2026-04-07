@@ -1,41 +1,16 @@
-from numpy import loadtxt
-from matplotlib import cm
 import math
-import cmath
 import time
 import os
-
 import numpy as np
-
-import matplotlib.pyplot as plt
-from matplotlib import rc
-
-from itertools import count
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
-from scipy import sparse
-from scipy.sparse.linalg import factorized
 from scipy import fft as sp_fft
-from scipy.linalg import solve_triangular, solve_banded
-#rc('font',**{'family':'sans-serif','sans-serif':['Helvetica']})
-## for Palatino and other serif fonts use:
-#rc('font',**{'family':'serif','serif':['Palatino']})
-#rc('text', usetex=True)
-
-
-
-import time
+from scipy.linalg import solve_banded
 start_time = time.time()
-
 PI = math.pi
-
-
 ##############################
 """ DEFINE FUNCTIONS """
 ###############################
-
-
-
 ############# 2D SPARSE SOLVER SETUP ##########
 def apply_lap_2d(field):
     # 完全捨棄有限差分矩陣，改用絕對精準的傅立葉頻域計算 Laplacian
@@ -77,18 +52,18 @@ def Hamiltonian_KH_1D(Pe, rho, m, p_rho, p_m):
 
     C11 = rho3 * (1.0 - rho3)
     C12 = m3   * (1.0 - rho3)
-    C22 = C11
+    C22 = rho3-m3**2
 
     # Drift terms
     term1 = gpr * (Pe * m3 * (1.0 - rho3) - drho)
     term2 = gpm * (Pe * rho3 * (1.0 - rho3) - dm)
-    term_react = -2.0 * pm3 * m3
+    term_react = - m3*np.sinh(2*pm3)
 
     # Conserved-noise quadratic form: (∂p)^T C (∂p) in 1D
     term_quad = C11 * (gpr**2) + 2.0 * C12 * (gpr * gpm) + C22 * (gpm**2)
 
     # Nonconserved piece
-    term_noncons = rho3 * (pm3**2)
+    term_noncons = 2.0*rho3 * (np.sinh(pm3))**2
 
     H_density = term1 + term2 + term_react + term_quad + term_noncons
     return np.sum(H_density, axis=(1, 2))
@@ -121,7 +96,7 @@ Lx = 1
 Ly = 400
 h  = 0.025
 Ncopy = 400
-Tmax = 20.
+Tmax = 100.
 
 s = np.linspace(0,Tmax,Ncopy)
 ds  = s[1]-s[0]
@@ -131,11 +106,16 @@ Pe = 6.0   # TODO: pick your Péclet-like parameter (must match KH paper's conve
 
 
 upward = True # choose if path from -1 to +1 (upward), or the opposite
-rho_0 = 0.55
-dtau = 0.01 
+previous_data = True
+path_reverse = False
+boundary_reverse = False
+threshold = 1000
 
-iterations = 12000
-plotStep   = 100
+rho_0 = 0.55
+dtau = 0.1 
+
+iterations = 60000
+plotStep   = 1000
 
 # theoreticla spinodal points
 high =3/4+1/4*np.sqrt(1-16/Pe**2)
@@ -146,7 +126,7 @@ resume_file = "KHcheckpoints/checkpoint.npz"
 relaxed_file = 'KHcheckpoints/relaxed3.npz'
 print('conditions: Ly,Lx,Ncopy =', Ly,Lx,Ncopy, 'h =', h, 'Pe =', Pe, 'dtau =', dtau, 'iterations =', iterations, 'Tmax =', Tmax)
 # === IMEX 穩定化（對應 modified 的 k4、gamma）===
-gamma = 2.0   # 與 modified 相同，壓制高頻
+gamma = 0.5   # 與 modified 相同，壓制高頻
 # 2D Fourier 波數（與 fft2(..., axes=(1,2)) 對應）
 kx = 2 * PI * sp_fft.fftfreq(Lx, d=h)
 ky = 2 * PI * sp_fft.fftfreq(Ly, d=h)
@@ -160,7 +140,9 @@ k2_2d = KX**2 + KY**2
 k4_2d = k2_2d**2
 k4_flat = k4_2d.ravel()   # shape (Ly*Lx,) 與 U_Fourier.reshape(Ncopy,-1) 的 column 對應
 k2_flat = k2_2d.ravel()   # [新增] 準備 k2 的 flat 陣列
-
+k_max = np.max(np.abs(ky))
+# 建立 2/3 Rule 遮罩 (形狀與 KY 相同)
+dealias_mask = np.abs(KY) <= (2.0 / 3.0 * k_max)
 ############# PATH-TIME UPWIND MATRICES（per-mode + IMEX）##########
 A_banded = np.zeros((Ly, 3, Ncopy))
 B_banded = np.zeros((Ly, 3, Ncopy))
@@ -223,37 +205,55 @@ reaction_V_rho_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 reaction_U_m_Fourier   = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 reaction_V_m_Fourier   = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 
+
+## Boundary conditions
 y_coords = np.arange(Ly)
 x_coords = np.arange(Lx)
 Y, X = np.meshgrid(y_coords, x_coords, indexing='ij')
+W = Ly/2
+interface_sharp_thickness = 12
+profile = 0.5*(np.tanh((Y - (Ly/2.0 - W/2.0)) / interface_sharp_thickness) - np.tanh((Y - (Ly/2.0 + W/2.0)) / interface_sharp_thickness))
+rho_sharp = profile + 0j
+if rho_0 > 0.5:
+	rho_sharp = (rho_sharp*(1-rho_0)*2+2*rho_0-1)/np.mean(rho_sharp*(1-rho_0)*2+2*rho_0-1)*rho_0
+else:
+	rho_sharp = rho_sharp/np.mean(rho_sharp)*rho_0
+
+interface_smooth_thickness = 200
+profile = 0.5*(np.tanh((Y - (Ly/2.0 - W/2.0)) / interface_smooth_thickness) - np.tanh((Y - (Ly/2.0 + W/2.0)) / interface_smooth_thickness))
+rho_smooth = profile + 0j
+if rho_0 > 0.5:
+	rho_smooth = (rho_smooth*(1-rho_0)*2+2*rho_0-1)/np.mean(rho_smooth*(1-rho_0)*2+2*rho_0-1)*rho_0
+else:
+	rho_smooth = rho_smooth/np.mean(rho_smooth)*rho_0
+
 if(upward==True):
-	W = Ly/2
-	interface_thickness = 200  # 介面的平滑度 (建議 2~3，讓 FFT 算導數時不會爆炸)
-	profile = 0.5*(np.tanh((Y - (Ly/2.0 - W/2.0)) / interface_thickness) - np.tanh((Y - (Ly/2.0 + W/2.0)) / interface_thickness))
-	rho1 = profile + 0j
-	if rho_0 > 0.5:
-		rho1 = (rho1*(1-rho_0)*2+2*rho_0-1)/np.mean(rho1*(1-rho_0)*2+2*rho_0-1)*rho_0
-	else:
-		rho1 = rho1/np.mean(rho1)*rho_0
+	rho1 = rho_sharp
 	rho1k = np.fft.fft2(rho1)
 	grad_rho1 = sp_fft.ifft2(1j * KY * rho1k).real
 	m1 = np.zeros((Ly,Lx), dtype=complex)
+	m1_real = (1.0 / Pe) * grad_rho1 / (1.0 - rho1.real)
+	m1 = m1_real + 0j
+	rho2 = rho_smooth
+	rho2k = np.fft.fft2(rho2)
+	grad_rho2 = sp_fft.ifft2(1j * KY * rho2k).real
+	m2 = np.zeros((Ly,Lx), dtype=complex)
+	# m2_real = (1.0 / Pe) * grad_rho2 / (1.0 - rho2.real)
+	# m2 = m2_real + 0j
+else:
+	rho1 = rho_smooth
+	rho1k = np.fft.fft2(rho1)
+	grad_rho1 = sp_fft.ifft2(1j * KY * rho1k).real
+	# m1 = np.zeros((Ly,Lx), dtype=complex)
 	# m1_real = (1.0 / Pe) * grad_rho1 / (1.0 - rho1.real)
 	# m1 = m1_real + 0j
-	
-	W = Ly/2
-	interface_thickness = 12  # 介面的平滑度 (建議 2~3，讓 FFT 算導數時不會爆炸)
-	profile = 0.5*(np.tanh((Y - (Ly/2.0 - W/2.0)) / interface_thickness) - np.tanh((Y - (Ly/2.0 + W/2.0)) / interface_thickness))
-	rho2 = profile + 0j
-	if rho_0 > 0.5:
-		rho2 = (rho2*(1-rho_0)*2+2*rho_0-1)/np.mean(rho2*(1-rho_0)*2+2*rho_0-1)*rho_0
-	else:
-		rho2 = rho2/np.mean(rho2)*rho_0
+	rho2 = rho_sharp
 	rho2k = np.fft.fft2(rho2)
 	grad_rho2 = sp_fft.ifft2(1j * KY * rho2k).real
 	m2 = np.zeros((Ly,Lx), dtype=complex)
 	m2_real = (1.0 / Pe) * grad_rho2 / (1.0 - rho2.real)
 	m2 = m2_real + 0j
+
 
 # check if mass is conserved
 print("mass of rho1", np.sum(rho1))
@@ -268,10 +268,24 @@ relax_steps = 20000
 
 if os.path.exists(relaxed_file):
 	data = np.load(relaxed_file)
-	rho1 = data['rho1']
-	rho2 = data['rho2']
-	m1 = data['m1']
-	m2 = data['m2']
+	if boundary_reverse == True:
+		rho1 = data['rho2']
+		rho2 = data['rho1']
+		m1 = data['m2']
+		m2 = data['m1']
+		rho1k = sp_fft.fft2(rho1)
+		rho2k = sp_fft.fft2(rho2)
+		m1k = sp_fft.fft2(m1)
+		m2k = sp_fft.fft2(m2)
+	else:
+		rho1 = data['rho1']
+		rho2 = data['rho2']
+		m1 = data['m1']
+		m2 = data['m2']
+		rho1k = sp_fft.fft2(rho1)
+		rho2k = sp_fft.fft2(rho2)
+		m1k = sp_fft.fft2(m1)
+		m2k = sp_fft.fft2(m2)
 else:	
 	def relax_kh_physical_states(rho_state, m_state, tol=1e-7, max_steps=500000):
 		rho_2d = rho_state.copy().real
@@ -279,8 +293,6 @@ else:
 		target_mass = np.mean(rho_2d)
 		print("開始尋找 KH2018 物理穩態 (dot(rho)=dot(m)=0)...")
 		for step in range(1, max_steps + 1):
-			rho_old = rho_2d.copy()
-			m_old   = m_2d.copy()
 			# FFT components (reuse for Laplacian)
 			rho_k = sp_fft.fft2(rho_2d)
 			m_k   = sp_fft.fft2(m_2d)
@@ -382,42 +394,82 @@ else:
 	plt.close(fig_states)
 	print(f"[*] Saved relaxed states plot to: {relax_plot_name}")
 	# ==========================================
+	rho1k = sp_fft.fft2(rho1)
+	rho2k = sp_fft.fft2(rho2)
+	m1k = sp_fft.fft2(m1)
+	m2k = sp_fft.fft2(m2)
+print("mass of rho1", np.sum(rho1))
+print("mass of rho2", np.sum(rho2))
+print("mass of m1", np.sum(m1))
+print("mass of m2", np.sum(m2))
 
-rho1k = sp_fft.fft2(rho1)
-rho2k = sp_fft.fft2(rho2)
-m1k = sp_fft.fft2(m1)
-m2k = sp_fft.fft2(m2)
+extract_ratio = 1.0
 
-######  INITIAL CONDITIONS 
+######  Initial guess 
 
+if previous_data == True:
+	if os.path.exists('KHcheckpoints/checkpoint1_2.npz'):
+		data = np.load('KHcheckpoints/checkpoint1_2.npz')
+		rho_old = data['rho']
+		m_old = data['m']
+		p_rho_old = data['p_rho']
+		p_m_old = data['p_m']
+		T_old = data['Tmax']
+		Ncopy_old = data['Ncopy']
+		Lx_old = data['Lx']
+		Ly_old = data['Ly']
 
-rho[0,:,:]       = rho1
-rho[Ncopy-1,:,:] = rho2
-# deterministically set the initial condition
+		# extract rho and theta from 0 to 0.9*T_old
+		rho_old = rho_old[:int(extract_ratio*Ncopy_old),:,:]
+		m_old = m_old[:int(extract_ratio*Ncopy_old),:,:]
+		p_rho_old = p_rho_old[:int(extract_ratio*Ncopy_old),:,:]
+		p_m_old = p_m_old[:int(extract_ratio*Ncopy_old),:,:]
+		Ncopy_old = int(extract_ratio*Ncopy_old)
+		T_old = T_old * extract_ratio
 
-m[0,:,:]       = m1
-m[Ncopy-1,:,:] = m2
+		import scipy.ndimage as ndimage
 
-amp = 0.4
-y_coords = np.arange(Ly)
-x_coords = np.arange(Lx)
-Y, X = np.meshgrid(y_coords, x_coords, indexing='ij')
+		zoom_factors = (Ncopy / Ncopy_old, Ly / Ly_old, Lx / Lx_old)
+		rho = ndimage.zoom(rho_old.real, zoom_factors, order=1).astype(complex)
+		m = ndimage.zoom(m_old.real, zoom_factors, order=1).astype(complex)
+		p_rho = ndimage.zoom(p_rho_old.real, zoom_factors, order=1).astype(complex)
+		p_m = ndimage.zoom(p_m_old.real, zoom_factors, order=1).astype(complex)
+		if path_reverse == True:
+			# reverse rho in time
+			rho = rho[::-1,:,:]
+			m = m[::-1,:,:]
+			p_rho = p_rho[::-1,:,:]
+			p_m = p_m[::-1,:,:]
+		rho[0,:,:]       = rho1
+		rho[Ncopy-1,:,:] = rho2
+		m[0,:,:]       = m1
+		m[Ncopy-1,:,:] = m2
+		print("rho shape", rho.shape)
+		print("m shape", m.shape)
+		print("p_rho shape", p_rho.shape)
+		print("p_m shape", p_m.shape)
+else:
+	# deterministically set the initial condition
+	amp = 0.4
+	y_coords = np.arange(Ly)
+	x_coords = np.arange(Lx)
+	Y, X = np.meshgrid(y_coords, x_coords, indexing='ij')
 
-# randomly set the initial condition
-noise_amp = 0.5  # noise amplitude
-np.random.seed(42 if Lx == 1 else None)
+	# randomly set the initial condition
+	noise_amp = 0.5  # noise amplitude
+	np.random.seed(42 if Lx == 1 else None)
 
-for j in range(1,Ncopy-1):
-	tt = float(j)/Ncopy
-	linear_rho = rho1*(1-tt) + tt*rho2
-	rho[j,:,:] = linear_rho
-	linear_m = m1*(1-tt) + tt*m2
-	m[j,:,:] = linear_m
+	for j in range(1,Ncopy-1):
+		tt = float(j)/Ncopy
+		linear_rho = rho1*(1-tt) + tt*rho2
+		rho[j,:,:] = linear_rho
+		linear_m = m1*(1-tt) + tt*m2
+		m[j,:,:] = linear_m
+U_rho = rho + p_rho
+U_m = m + p_m	
+V_rho = rho - p_rho
+V_m = m - p_m
 
-# ---- momenta initial guess ----
-# deterministic limit in KH note requires p_rho=p_m=0
-p_rho[:] = 0.0 + 0j
-p_m[:]   = 0.0 + 0j
 
 if os.path.exists(resume_file):
 	data = np.load(resume_file)
@@ -435,20 +487,20 @@ if os.path.exists(resume_file):
 	dtau = data['dtau']
 	upward = data['upward']
 	end_iterations = data['iterations']
-	plotStep = data['plotStep']
+	# plotStep = data['plotStep']
 	start_iter = end_iterations + 1
 else:
 	start_iter = 0
-U_rho = rho + p_rho
-U_m = m + p_m	
-V_rho = rho - p_rho
-V_m = m - p_m
+
 ###### Evolve Loop (GDA Algorithm 1: path-time upwind + full reaction) ######
 start_time = time.time()
 print("start_iter", start_iter)
 print("iterations", iterations)
 for i in range(start_iter, iterations+1):
-
+	U_rho = rho + p_rho
+	U_m = m + p_m
+	V_rho = rho - p_rho
+	V_m = m - p_m
 	# ================= UPDATE U =================
 	# 1. 完整 reaction（含空間擴散 D*Lap）
 	# lap_rho   = apply_lap_2d(rho)
@@ -495,7 +547,7 @@ for i in range(start_iter, iterations+1):
 	# 所有的非線性係數 (C11, C12, 以及對流項) 都使用「安全替身」來計算
 	C11 = rho_safe * (1.0 - rho_safe)
 	C12 = m_safe   * (1.0 - rho_safe)
-	C22 = C11
+	C22 = rho_safe-m_safe**2
 
 	# δH/δp_rho
 	bracket_1 = Pe * m_safe * (1.0 - rho_safe) - rho_prime + 2.0 * (C11 * pr_prime + C12 * pm_prime)
@@ -503,21 +555,13 @@ for i in range(start_iter, iterations+1):
 
 	# δH/δp_m
 	bracket_2 = Pe * rho_safe * (1.0 - rho_safe) - m_prime + 2.0 * (C12 * pr_prime + C22 * pm_prime)
-	dH_dpm = -apply_grad_y(bracket_2) - 2.0*m + 2.0*rho_safe*p_m
+	dH_dpm = -apply_grad_y(bracket_2) - 2.0*m_safe*np.cosh(2*p_m) + 2.0*rho_safe*np.sinh(2*p_m)
 
 	# δH/δρ
-	dH_drho = (lap_pr
-			- Pe * m_safe * pr_prime
-			+ Pe * (1.0 - 2.0 * rho_safe) * pm_prime
-			+ (1.0 - 2.0 * rho_safe) * (pr_prime**2 + pm_prime**2)
-			- 2.0 * m_safe * pr_prime * pm_prime
-			+ (p_m**2))
+	dH_drho = lap_pr- Pe * m_safe * pr_prime+ Pe * (1.0 - 2.0 * rho_safe) * pm_prime+ (1.0 - 2.0 * rho_safe) * pr_prime**2- 2.0 * m_safe * pr_prime * pm_prime+pm_prime**2+2*np.sinh(p_m)**2
 
 	# δH/δm
-	dH_dm = (lap_pm
-			+ Pe * (1.0 - rho_safe) * pr_prime
-			- 2.0 * p_m
-			+ 2.0 * (1.0 - rho_safe) * pr_prime * pm_prime)
+	dH_dm = lap_pm+ Pe * (1.0 - rho_safe) * pr_prime+ 2.0 * (1.0 - rho_safe) * pr_prime * pm_prime-2.0*m_safe*pm_prime**2- np.sinh(2.0 * p_m)
 
 	# reaction_U = dH_drho - dH_dtheta
 	reaction_U_rho = dH_drho - dH_dprho
@@ -530,6 +574,8 @@ for i in range(start_iter, iterations+1):
 	V_m_Fourier[:] = sp_fft.fft2(V_m, axes=(1, 2))
 	reaction_U_rho_Fourier[:] = sp_fft.fft2(reaction_U_rho, axes=(1, 2))
 	reaction_U_m_Fourier[:] = sp_fft.fft2(reaction_U_m, axes=(1, 2))
+	# reaction_U_rho_Fourier = reaction_U_rho_Fourier * dealias_mask
+	# reaction_U_m_Fourier = reaction_U_m_Fourier * dealias_mask
 
 	RHS_U_rho_Fourier = U_rho_Fourier + dtau * reaction_U_rho_Fourier
 	RHS_U_rho_Fourier[Ncopy-1, :, :] = -V_rho_Fourier[Ncopy-1, :, :] + 2.0 * rho2k
@@ -618,7 +664,7 @@ for i in range(start_iter, iterations+1):
 	# 所有的非線性係數 (C11, C12, 以及對流項) 都使用「安全替身」來計算
 	C11 = rho_safe * (1.0 - rho_safe)
 	C12 = m_safe   * (1.0 - rho_safe)
-	C22 = C11
+	C22 = rho_safe-m_safe**2
 
 	# δH/δp_rho
 	bracket_1 = Pe * m_safe * (1.0 - rho_safe) - rho_prime + 2.0 * (C11 * pr_prime + C12 * pm_prime)
@@ -626,26 +672,20 @@ for i in range(start_iter, iterations+1):
 
 	# δH/δp_m
 	bracket_2 = Pe * rho_safe * (1.0 - rho_safe) - m_prime + 2.0 * (C12 * pr_prime + C22 * pm_prime)
-	dH_dpm = -apply_grad_y(bracket_2) - 2.0*m + 2.0*rho_safe*p_m
+	dH_dpm = -apply_grad_y(bracket_2) - 2.0*m_safe*np.cosh(2*p_m) + 2.0*rho_safe*np.sinh(2*p_m)
 
 	# δH/δρ
-	dH_drho = (lap_pr
-			- Pe * m_safe * pr_prime
-			+ Pe * (1.0 - 2.0 * rho_safe) * pm_prime
-			+ (1.0 - 2.0 * rho_safe) * (pr_prime**2 + pm_prime**2)
-			- 2.0 * m_safe * pr_prime * pm_prime
-			+ (p_m**2))
+	dH_drho = lap_pr- Pe * m_safe * pr_prime+ Pe * (1.0 - 2.0 * rho_safe) * pm_prime+ (1.0 - 2.0 * rho_safe) * pr_prime**2- 2.0 * m_safe * pr_prime * pm_prime+pm_prime**2+2*np.sinh(p_m)**2
 
 	# δH/δm
-	dH_dm = (lap_pm
-			+ Pe * (1.0 - rho_safe) * pr_prime
-			- 2.0 * p_m
-			+ 2.0 * (1.0 - rho_safe) * pr_prime * pm_prime)
+	dH_dm = lap_pm+ Pe * (1.0 - rho_safe) * pr_prime+ 2.0 * (1.0 - rho_safe) * pr_prime * pm_prime-2.0*m_safe*pm_prime**2- np.sinh(2.0 * p_m)
 	
 	reaction_V_rho = dH_drho + dH_dprho
 	reaction_V_m   = dH_dm + dH_dpm
 	reaction_V_rho_Fourier[:] = sp_fft.fft2(reaction_V_rho, axes=(1, 2))
 	reaction_V_m_Fourier[:] = sp_fft.fft2(reaction_V_m, axes=(1, 2))
+	# reaction_V_rho_Fourier = reaction_V_rho_Fourier * dealias_mask
+	# reaction_V_m_Fourier = reaction_V_m_Fourier * dealias_mask
 	U_rho_Fourier[:] = sp_fft.fft2(U_rho, axes=(1, 2))
 	U_m_Fourier[:] = sp_fft.fft2(U_m, axes=(1, 2))
 	V_rho_Fourier[:] = sp_fft.fft2(V_rho, axes=(1, 2))
@@ -688,8 +728,6 @@ for i in range(start_iter, iterations+1):
 	p_m[0] = 0.0 + 0j
 	p_rho[Ncopy-1] = 0.0 + 0j
 	p_m[Ncopy-1] = 0.0 + 0j
-	# U = rho + theta
-	# V = rho - theta
 	U_rho = rho + p_rho
 	U_m = m + p_m
 	V_rho = rho - p_rho
@@ -732,7 +770,7 @@ for i in range(start_iter, iterations+1):
 	    
 	if( i%plotStep == 0):
 		if i > start_iter:
-			print('max_diff_rho, max_diff_m, max_diff_pr, max_diff_pm, H_std, H_max:', max_diff_rho, max_diff_m, max_diff_pr, max_diff_pm, H_std, Hamiltonian_KH_1D(Pe, rho_1d_check, m_1d_check, pr_1d_check, pm_1d_check).real[2:-10].max()*1e-2)
+			print('max_diff_rho, H_std:', max_diff_rho, H_std)
 		# Flatten space to (Ncopy, Ly*Lx) for Lagrangian/Hamiltonian and plots
 		rho_1d = rho.reshape(Ncopy, -1)
 		m_1d = m.reshape(Ncopy, -1)
@@ -748,9 +786,9 @@ for i in range(start_iter, iterations+1):
 		ax4 = fig.add_subplot(324)
 		ax5 = fig.add_subplot(326)
 		Lag = Lagrangian_KH_1D(Pe, ds, rho_1d, m_1d, pr_1d, pm_1d).real
-		actionS = dnu* np.sum(Lag)
+		actionS = dnu* np.sum(Lag)*h
 		
-		fig.suptitle(r'$N_\mathrm{copy}=$'+str(int(Ncopy))+r', $L=$'+str(Ly)+r', $\Delta \tau=$'+str("%.1e"%dtau)+r', $Pe=$'+str("%.1e"%Pe) +r', $T_\mathrm{max}=$'+str("%.1f"%Tmax)+r', $S=$'+str("%.6f"%(actionS))+', Time '+ str(i*dtau), fontsize=20)
+		fig.suptitle(r'$N_t=$'+str(int(Ncopy))+r', $N_x=$'+str(Ly)+r', $\Delta \tau=$'+str("%.1e"%dtau)+r', $Pe=$'+str(Pe) +r', $T_\mathrm{max}=$'+str("%.1f"%Tmax)+r', $S=$'+str("%.6f"%(actionS))+r', $\tau=$ '+ str(i*dtau), fontsize=20)
 		
 		### [NEW] PLOT: Symmetry Breaking Projection (Mean vs Std)
 		mean_rho = np.mean(rho_1d.real, axis=1) 
@@ -758,7 +796,7 @@ for i in range(start_iter, iterations+1):
 		std_rho  = np.std(rho_1d.real, axis=1)  	
 		std_m = np.std(m_1d.real, axis=1)
 
-		im1 = ax0.scatter(std_rho, mean_rho, c=np.linspace(0,1,Ncopy), cmap='viridis', s=15, zorder=10) 
+		im1 = ax0.scatter(std_rho, mean_rho, c=np.linspace(0,1,Ncopy), cmap='bwr', s=15, zorder=10) 
 		im2 = ax0.scatter(std_m, mean_m, c=np.linspace(0,1,Ncopy), cmap='viridis', s=15, zorder=10) 
 		ax0.plot(std_rho, mean_rho, color='darkblue', linewidth=2, label='Instanton Path')
 		ax0.plot(std_m, mean_m, color='darkred', linewidth=2, label='Instanton Path')
@@ -771,7 +809,7 @@ for i in range(start_iter, iterations+1):
 		ax0.grid(True, linestyle=':', alpha=0.6)
 		ax0.set_xlim(left=-0.05, right=max(std_rho.max()*1.2, 0.5)) 
 		ax0.set_ylim(0, 1.5)
-		ax0.legend(loc='best', fontsize=12)
+		# ax0.legend(loc='best', fontsize=12)
 		## colorbar
 		cbar1 = fig.colorbar(im1, ax=ax0, shrink=0.8)
 		cbar2 = fig.colorbar(im2, ax=ax0, shrink=0.8)
@@ -794,7 +832,7 @@ for i in range(start_iter, iterations+1):
 		ax1.set_xlabel('Time', fontsize=20)
 		ax1.set_ylabel(f'Y Coordinate (at x={mid_x})', fontsize=15)
 		Lag = Lagrangian_KH_1D(Pe, ds, rho_1d, m_1d, pr_1d, pm_1d).real
-		actionS = dnu* np.sum(Lag)
+		actionS = dnu* np.sum(Lag)*h
 
 		### PLOT m
 		mid_x = Lx // 2
@@ -804,7 +842,7 @@ for i in range(start_iter, iterations+1):
 		im2 = ax2.pcolormesh(t_edges, y_edges, m_slice, 
                            cmap='bwr', 
                            shading='flat',
-                           vmin=-1.5, vmax=1.5)
+                           vmin=-0.5, vmax=0.5)
 		cbar = fig.colorbar(im2, ax=ax2, shrink=0.8)
 		cbar.set_label(r'$m(x_{mid}, y, t)$', fontsize=20)
 		ax2.tick_params(axis='both', which='major', labelsize=15)
@@ -812,14 +850,14 @@ for i in range(start_iter, iterations+1):
 		ax2.set_xlabel('Time', fontsize=20)
 		ax2.set_ylabel(f'Y Coordinate (at x={mid_x})', fontsize=15)
 		Lag = Lagrangian_KH_1D(Pe, ds, rho_1d, m_1d, pr_1d, pm_1d).real
-		actionS = dnu* np.sum(Lag)
+		actionS = dnu* np.sum(Lag)*h
 
 		### PLOT p_rho
 		p_rho_slice = p_rho[:, :, mid_x].real.T
 		im3 = ax3.pcolormesh(t_edges, y_edges, p_rho_slice, 
 							cmap='bwr', 
 							shading='flat',
-							vmin=min(p_rho_slice.min(), -0.5), vmax=max(p_rho_slice.max(), 0.5))
+							vmin=-0.05, vmax=0.05)
 		cbar3 = fig.colorbar(im3, ax=ax3, shrink=0.8)
 		cbar3.set_label(r'$p_\rho(x_{mid}, y, t)$', fontsize=20)
 		ax3.tick_params(axis='both', which='major', labelsize=15)
@@ -832,7 +870,7 @@ for i in range(start_iter, iterations+1):
 		im4 = ax4.pcolormesh(t_edges, y_edges, p_m_slice, 
 							cmap='bwr', 
 							shading='flat',
-							vmin=min(p_m_slice.min(), -0.5), vmax=max(p_m_slice.max(), 0.5))
+							vmin=-0.02, vmax=0.02)
 		cbar4 = fig.colorbar(im4, ax=ax4, shrink=0.8)
 		cbar4.set_label(r'$p_m(x_{mid}, y, t)$', fontsize=20)
 		ax4.tick_params(axis='both', which='major', labelsize=15)
@@ -842,15 +880,24 @@ for i in range(start_iter, iterations+1):
 
 		### PLOT Lagrangian and Hamiltonian
 		ax5.set_aspect('auto')
-		ax5.plot(np.linspace(0,1,Ncopy), Lag, label=r'$L(\rho,\dot\rho)$', color='black'  ) 
-		ax5.plot(np.linspace(0,1,Ncopy), Hamiltonian_KH_1D(Pe, rho_1d, m_1d, pr_1d, pm_1d).real, label=r'$H(\rho,m,\dot\rho,\dot m)$', color='brown' , linestyle='-.') 
+		ax5.plot(np.linspace(0,1,Ncopy), Lag*h, label=r'$L(\rho,\dot\rho)$', color='black'  ) 
+		ax5.plot(np.linspace(0,1,Ncopy), Hamiltonian_KH_1D(Pe, rho_1d, m_1d, pr_1d, pm_1d).real*h, label=r'$H(\rho,m,\dot\rho,\dot m)$', color='brown' , linestyle='-.') 
+		# rhoDot_1d = (np.roll(rho_1d, -1, axis=0) - np.roll(rho_1d, 1, axis=0)) / (2*ds)
+		# mDot_1d = (np.roll(m_1d, -1, axis=0) - np.roll(m_1d, 1, axis=0)) / (2*ds)
+		# kin = np.sum(rhoDot_1d * pr_1d + mDot_1d * pm_1d, axis=1)
+		# ax5.plot(np.linspace(0,1,Ncopy), kin, 'b', label=r'Kinetic $\sum p \dot{q}$')
 		plt.legend(loc='best', fontsize=14)
 		ax5.tick_params(axis='both', which='major', labelsize=15)
 		ax5.set_xlabel(r'$t/T_\mathrm{Max}$', fontsize=20)
 		ax5.set_ylabel(r'$L$', fontsize=20)
 		ax5.set_xlim(0,1)
-		ax5.set_ylim(-0.01*max(Lag[2:-10].max(), Hamiltonian_KH_1D(Pe, rho_1d, m_1d, pr_1d, pm_1d).real[2:-10].max()), max(Lag[2:-10].max(), Hamiltonian_KH_1D(Pe, rho_1d, m_1d, pr_1d, pm_1d).real[2:-10].max())*1.2)
+		ax5.set_ylim(1.1*min(Lag[2:-10].min()*h, Hamiltonian_KH_1D(Pe, rho_1d, m_1d, pr_1d, pm_1d).real[2:-10].min()*h), max(Lag[2:-10].max()*h, Hamiltonian_KH_1D(Pe, rho_1d, m_1d, pr_1d, pm_1d).real[2:-10].max()*h)*1.2)
 		
+
+		
+		if i > start_iter:
+			Lag = Lagrangian_KH_1D(Pe, ds, rho_1d, m_1d, pr_1d, pm_1d).real
+			print('Lag max, min:', Lag.max()*h, Lag.min()*h)
 		if(upward==True):
 			plt.savefig('upward_Lx'+str(int(Lx))+'_Ly'+str(int(Ly))+'_N'+str(int(Ncopy))+'h'+str(float(h))+'Pe'+str(Pe)+'_rho_0'+str(rho_0)+'_dtau'+str("%.1e"%dtau)+'_'+"%09d" % (i,)+'.png', format='png', bbox_inches='tight')
 			print(f"Time taken: {time.time() - start_time} seconds", "iteration", i)
@@ -860,3 +907,120 @@ for i in range(start_iter, iterations+1):
 		plt.clf()
 		plt.close()
 		np.savez_compressed('KHcheckpoints/checkpoint.npz', rho=rho, m=m, p_rho=p_rho, p_m=p_m, iteration=i, Lx=Lx, Ly=Ly, h=h, Ncopy=Ncopy, Tmax=Tmax, Pe=Pe, dtau=dtau, upward=upward, iterations=i, plotStep=plotStep)
+def animate_2d_heatmap(rho, m, p_rho, p_m, filename="2d_evolution.mp4", dnu=None, skip=1, fps=30):
+	"""
+	2D Heatmap Animation for both rho and m
+	rho, theta shape: (Ncopy, Ly, Lx)
+	"""
+	rho = np.asarray(rho).real
+	m = np.asarray(m).real
+	p_rho = np.asarray(p_rho).real
+	p_m = np.asarray(p_m).real
+	Nt, Ly, Lx = rho.shape
+
+	if dnu is None:
+		dnu = 1.0 / max(Nt - 1, 1)
+
+	# Downsample frames
+	indices = np.arange(0, Nt, skip)
+	if len(indices) > 300: # 限制最大幀數以免檔案太大
+		indices = np.linspace(0, Nt - 1, 200, dtype=int)
+
+	rho_sub = rho[indices]
+	m_sub = m[indices]
+	p_rho_sub = p_rho[indices]
+	p_m_sub = p_m[indices]
+	n_frames = len(indices)
+
+	# 既然是曲線圖，4 列 1 欄 (4 rows, 1 column) 是最適合觀察介面波動的佈局
+	fig, (ax1, ax2, ax3, ax4) = plt.subplots(4, 1, figsize=(10, 12), layout='constrained')
+
+	# 準備 X 軸數據（即 y 方向的座標）
+	y_points = np.arange(Ly)
+
+	# ---------------------------------------------------------
+	# 1. 初始化 Rho 曲線
+	# ---------------------------------------------------------
+	# rho_sub[0] 的形狀是 (Ly, 1)，我們取 [:, 0] 轉成 1D 向量
+	line1, = ax1.plot(y_points, rho_sub[0].real[:, 0], color='red', lw=2)
+	ax1.set_ylim(-0.1, 1.1)  # Rho 通常在 0~1 之間
+	ax1.set_title(r"Density $\rho$")
+	ax1.set_ylabel(r"Value")
+	ax1.grid(True, alpha=0.3)
+
+	# ---------------------------------------------------------
+	# 2. 初始化 M 曲線
+	# ---------------------------------------------------------
+	m_max = max(np.abs(m).max(), 0.01) * 1.2 # 給一點邊界緩衝
+	line2, = ax2.plot(y_points, m_sub[0].real[:, 0], color='blue', lw=2)
+	ax2.set_ylim(-m_max, m_max)
+	ax2.set_title(r"Momentum $m$")
+	ax2.set_ylabel(r"Value")
+	ax2.grid(True, alpha=0.3)
+
+	# ---------------------------------------------------------
+	# 3. 初始化 P_rho 曲線
+	# ---------------------------------------------------------
+	p_rho_max = max(np.abs(p_rho).max(), 0.01) * 1.2
+	line3, = ax3.plot(y_points, p_rho_sub[0].real[:, 0], color='green', lw=2)
+	ax3.set_ylim(-p_rho_max, p_rho_max)
+	ax3.set_title(r"Momentum $p_\rho$")
+	ax3.set_ylabel(r"Value")
+	ax3.grid(True, alpha=0.3)
+
+	# ---------------------------------------------------------
+	# 4. 初始化 P_m 曲線
+	# ---------------------------------------------------------
+	p_m_max = max(np.abs(p_m).max(), 0.01) * 1.2
+	line4, = ax4.plot(y_points, p_m_sub[0].real[:, 0], color='purple', lw=2)
+	ax4.set_ylim(-p_m_max, p_m_max)
+	ax4.set_title(r"Momentum $p_m$")
+	ax4.set_ylabel(r"Value")
+	ax4.set_xlabel("y coordinate")
+	ax4.grid(True, alpha=0.3)
+
+	# 共同大標題
+	fig.suptitle(f"Time: 0.00 | Profile Evolution", fontsize=16)
+	def update(frame_idx):
+		# 更新各條曲線的數據
+		line1.set_ydata(rho_sub[frame_idx].real[:, 0])
+		line2.set_ydata(m_sub[frame_idx].real[:, 0])
+		line3.set_ydata(p_rho_sub[frame_idx].real[:, 0])
+		line4.set_ydata(p_m_sub[frame_idx].real[:, 0])
+		
+		t = indices[frame_idx] * dnu
+		fig.suptitle(f"Time: {t:.2f} | Profile Evolution")
+		
+		return line1, line2, line3, line4
+
+	# 注意：這裡把 blit 改成 False，因為我們要更新 fig.suptitle
+	anim = FuncAnimation(fig, update, frames=n_frames, blit=False, interval=1000.0/fps)
+
+	# Save
+	ext = filename.rsplit(".", 1)[-1].lower()
+	if ext == "mp4":
+		try:
+			anim.save(filename, writer="ffmpeg", fps=fps, dpi=100)
+		except:
+			anim.save(filename.replace(".mp4", ".gif"), writer="pillow", fps=fps)
+	else:
+		anim.save(filename, writer="pillow", fps=fps)
+		
+	plt.close(fig)
+	print(f"Saved 2D animation: {filename}")
+
+
+# 傳入原始的 3D rho (Ncopy, Ly, Lx)
+animate_2d_heatmap(rho, m, p_rho, p_m, filename=f"KH_2d_sim_Lx{int(Lx)}_Ly{int(Ly)}.mp4", dnu=dnu, skip=4, fps=10)
+
+
+
+
+
+
+
+
+
+
+
+

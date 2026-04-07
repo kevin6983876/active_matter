@@ -4,7 +4,6 @@ import numpy as np
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
 from scipy import sparse
-from scipy.sparse.linalg import factorized
 from scipy import fft as sp_fft
 from scipy.linalg import solve_banded
 import time
@@ -198,6 +197,8 @@ V2_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 reaction_U = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 reaction_V = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 
+reaction_U_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
+reaction_V_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 
 ######  Boundary conditions
 rho_stripe = solRho[0] * np.ones((Ly, Lx), dtype=float)
@@ -225,9 +226,6 @@ else:
 	rho1k = sp_fft.fft2(rho1)
 	rho2 = rho_droplet
 	rho2k = sp_fft.fft2(rho2)
-
-reaction_U_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
-reaction_V_Fourier = np.zeros((Ncopy,Ly,Lx), dtype=complex)
 
 # check if mass is conserved
 print("mass of rho1", np.sum(rho1))
