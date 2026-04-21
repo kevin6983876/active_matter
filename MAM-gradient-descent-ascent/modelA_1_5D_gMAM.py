@@ -125,8 +125,8 @@ def compute_lambda_gmam(rho, dH_dtheta, H_path, ds):
 ##############################
 
 Lx = 1
-Ly = 400
-h  = 0.125
+Ly = 50
+h  = 1
 Ncopy = 2000 
 Tmax = 600.
 
@@ -143,7 +143,7 @@ reverse = False
 threshold = 1000
 
 D     = 5
-kappa = 0.0
+kappa = 0.1
 
 solRho = np.sort(np.roots([-1, kappa, 1, 0])) # rho-, rhos, rho+ 
 
@@ -152,7 +152,7 @@ dtau = 0.02
 iterations = 40000
 plotStep   = 200
 resume_file = "checkpoints/checkpoint_local.npz"
-initial_guess = "checkpoints/checkpoint_gMAM2_1.npz"
+initial_guess = "checkpoints/checkpoint_gMAM2.npz"
 r = dtau/dnu
 print('conditions: Ly,Lx,Ncopy =', Ly,Lx,Ncopy, 'h =', h, 'D =', D, 'kappa =', kappa, 'dtau =', dtau, 'iterations =', iterations, 'Tmax =', Tmax)
 
@@ -474,27 +474,6 @@ for i in range(start_iter, iterations+1):
 	U_Fourier_flat = U_Fourier.reshape(Ncopy, -1)
 	U_new_flat = np.zeros_like(RHS_flat)
 	r_vec = (dtau / ds) * lambdas
-	# for col in range(N_space):
-	# 	stab_term = gamma * (D * k4_flat[col] + 2.0 * k2_flat[col]) * U_Fourier_flat[:, col]
-	# 	RHS_col = RHS_flat[:, col] + dtau * stab_term
-	# 	U_new_flat[:, col] = solve_banded((0, 2), A_banded[col], RHS_col)
-	# for col in range(N_space):
-	# 	# 注意：原本的 stab 是一個純量，現在它是常數
-	# 	stab_term_scalar = dtau * gamma * (D * k4_flat[col] + 2.0 * k2_flat[col])
-	# 	stab_term_array  = stab_term_scalar * U_Fourier_flat[:, col] # 給 RHS 用的
-		
-	# 	# [NEW] 動態更新 A_banded (將 r 改為 r_vec)
-	# 	A_banded[col, 2, :] = 1. + 1.5 * r_vec + stab_term_scalar
-	# 	A_banded[col, 2, Ncopy-2] = 1. + r_vec[Ncopy-2] + stab_term_scalar
-	# 	A_banded[col, 2, Ncopy-1] = 1. + stab_term_scalar
-
-	# 	A_banded[col, 1, 1:] = -2.0 * r_vec[1:]
-	# 	A_banded[col, 1, Ncopy-1] = -r_vec[Ncopy-1]
-
-	# 	A_banded[col, 0, 2:] = 0.5 * r_vec[2:]
-
-	# 	RHS_col = RHS_flat[:, col] + stab_term_array
-	# 	U_new_flat[:, col] = solve_banded((0, 2), A_banded[col], RHS_col)
 	for col in range(N_space):
 		stab_term_scalar = dtau * gamma * (D * k4_flat[col] + 2.0 * k2_flat[col])
 		stab_term_array  = stab_term_scalar * U_Fourier_flat[:, col]
@@ -547,26 +526,6 @@ for i in range(start_iter, iterations+1):
 	RHS_V_flat = RHS_V_Fourier.reshape(Ncopy, -1)
 	V_Fourier_flat = V_Fourier.reshape(Ncopy, -1)
 	V_new_flat = np.zeros_like(RHS_V_flat)
-	# for col in range(N_space):
-	# 	stab_term = gamma * (D * k4_flat[col] + 2.0 * k2_flat[col]) * V_Fourier_flat[:, col]
-	# 	RHS_col = RHS_V_flat[:, col] + dtau * stab_term
-	# 	V_new_flat[:, col] = solve_banded((2, 0), B_banded[col], RHS_col)
-	# for col in range(N_space):
-	# 	stab_term_scalar = dtau * gamma * (D * k4_flat[col] + 2.0 * k2_flat[col])
-	# 	stab_term_array  = stab_term_scalar * V_Fourier_flat[:, col]
-		
-	# 	# [NEW] 動態更新 B_banded (將 r 改為 r_vec)
-	# 	B_banded[col, 0, :] = 1. + 1.5 * r_vec + stab_term_scalar
-	# 	B_banded[col, 0, 1] = 1. + r_vec[1] + stab_term_scalar
-	# 	B_banded[col, 0, 0] = 1.0 + stab_term_scalar 
-
-	# 	B_banded[col, 1, :-1] = -2.0 * r_vec[:-1]
-	# 	B_banded[col, 1, 0] = -r_vec[0]
-
-	# 	B_banded[col, 2, :-2] = 0.5 * r_vec[:-2]
-
-	# 	RHS_col = RHS_V_flat[:, col] + stab_term_array
-	# 	V_new_flat[:, col] = solve_banded((2, 0), B_banded[col], RHS_col)
 	for col in range(N_space):
 		stab_term_scalar = dtau * gamma * (D * k4_flat[col] + 2.0 * k2_flat[col])
 		stab_term_array  = stab_term_scalar * V_Fourier_flat[:, col]
@@ -699,13 +658,7 @@ for i in range(start_iter, iterations+1):
 		ax1.set_yticks([0, n_space-1])
 		ax1.set_xlabel(r'$\sigma$', fontsize=20)
 		ax1.set_ylabel('Space index (0 to L-1)', fontsize=20)
-		Lag_geom = Geometric_Action_Density(rho_1d.real, theta_1d.real, Ncopy)
     
-		# 使用梯形法則精確積分 (橫軸為 0~1 的 s_points)
-		s_points = np.linspace(0, 1.0, Ncopy)
-		S_phys, L_geom, uphill_mask = compute_physical_action(rho, theta, D, kappa, ds_geom)
-		actionS = S_phys * h * aa
-
 		### PLOT theta
 		theta_map = theta_1d.real.T  # Shape: (Ly*Lx, Ncopy)
 		im2 = ax2.pcolormesh(s_edges, x_edges, theta_map, 
